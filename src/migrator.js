@@ -127,6 +127,57 @@ class Migrator extends EventEmitter {
     return this.stats;
   }
 
+  async scanCloud(validatedInfo, options = {}) {
+    this.state = 'SCANNING';
+    this.emit('status', { state: this.state });
+    this.log('INFO', `Bulut Google Takeout arşivi taranıyor: ${validatedInfo.filename} (${validatedInfo.totalSizeGb} GB)`);
+
+    const CloudTakeoutStreamer = require('./cloud-streamer');
+    const allFiles = await CloudTakeoutStreamer.scanRemoteZip(validatedInfo, options);
+
+    this.stats.totalFiles = allFiles.length;
+    this.stats.scannedFiles = allFiles.length;
+
+    let extractedCount = 0;
+    let zipCount = allFiles.length;
+    let livePhotoCount = 0;
+
+    for (const f of allFiles) {
+      if (f.isLivePhoto) {
+        livePhotoCount++;
+      }
+    }
+
+    this.stats.extractedCount = extractedCount;
+    this.stats.zipCount = zipCount;
+    this.stats.livePhotoCount = livePhotoCount;
+
+    this.filesToProcess = [];
+    let alreadyUploaded = 0;
+    let totalBytes = 0;
+
+    for (const f of allFiles) {
+      if (this.checkpoint.isUploaded(f.fullPath)) {
+        alreadyUploaded++;
+      } else {
+        this.filesToProcess.push(f);
+        totalBytes += f.size;
+      }
+    }
+
+    this.stats.alreadyUploaded = alreadyUploaded;
+    this.stats.pendingFiles = this.filesToProcess.length;
+    this.stats.totalBytes = totalBytes;
+    this.stats.uploadedBytes = 0;
+    this.stats.processedFiles = 0;
+    this.stats.percentage = this.stats.pendingFiles === 0 ? 100 : 0;
+
+    this.log('INFO', `Bulut tarama tamamlandı: ${allFiles.length} medya (${livePhotoCount} Live Photo). ${alreadyUploaded} önceden aktarılmış, ${this.filesToProcess.length} aktarılacak.`);
+    this.state = 'READY';
+    this.emit('status', { state: this.state, stats: this.stats });
+    return this.stats;
+  }
+
   async start(config) {
     if (this.state === 'RUNNING') return;
     this.config = config;
@@ -137,19 +188,27 @@ class Migrator extends EventEmitter {
 
     // Eğer henüz taranmadıysa veya beklemede dosya yoksa, önce tara
     if (this.filesToProcess.length === 0 && this.stats.totalFiles === 0) {
-      await this.scan(config.takeoutDir, {
-        scanExtracted: config.scanExtracted !== false,
-        scanZips: config.scanZips !== false,
-        pairLivePhotos: config.pairLivePhotos !== false
-      });
+      if (config.cloudInfo) {
+        await this.scanCloud(config.cloudInfo, {
+          pairLivePhotos: config.pairLivePhotos !== false
+        });
+      } else {
+        await this.scan(config.takeoutDir, {
+          scanExtracted: config.scanExtracted !== false,
+          scanZips: config.scanZips !== false,
+          pairLivePhotos: config.pairLivePhotos !== false
+        });
+      }
     }
 
     // Otomatik Sınıflandırma (Auto-Organize: uploaded, duplicates, errors)
-    const organizeEnabled = config.organizeMedia !== false;
+    // Bulut aktarımında disk operasyonu yapılmaz
+    const isCloud = !!config.cloudInfo;
+    const organizeEnabled = !isCloud && (config.organizeMedia !== false);
     const organizeAction = config.organizeAction || 'move'; // 'move' veya 'copy'
     let organizeOutputDir = config.organizeOutputDir;
 
-    if (!organizeOutputDir && config.takeoutDir) {
+    if (!isCloud && !organizeOutputDir && config.takeoutDir) {
       const isDir = fs.existsSync(config.takeoutDir) && fs.statSync(config.takeoutDir).isDirectory();
       if (isDir) {
         // Doğrudan seçilen arşiv klasörünün içinde uploaded, duplicates, errors oluştur
@@ -285,6 +344,12 @@ class Migrator extends EventEmitter {
 
         this.activeWorkers.set(workerId, item.name);
         this.emit('workers', Array.from(this.activeWorkers.values()));
+
+        // Bulut akışında JSON yan verisi gerektiği anda lazy olarak okunur
+        if (item.isCloudStream && item.jsonEntry && !item.jsonContent) {
+          const CloudTakeoutStreamer = require('./cloud-streamer');
+          item.jsonContent = await CloudTakeoutStreamer.readEntryContent(item.zipfile, item.jsonEntry);
+        }
 
         const meta = await TakeoutScanner.parseMetadata(item);
 

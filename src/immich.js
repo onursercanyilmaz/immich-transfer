@@ -76,7 +76,10 @@ class ImmichClient {
             const videoName = item.livePhotoVideoName || 'motion.mov';
             const videoMime = mime.lookup(videoName) || 'video/quicktime';
 
-            if (item.isZip && item.livePhotoVideoEntry) {
+            if (item.isCloudStream) {
+              const CloudTakeoutStreamer = require('./cloud-streamer');
+              videoStream = await CloudTakeoutStreamer.openCloudEntryStream(item, true);
+            } else if (item.isZip && item.livePhotoVideoEntry) {
               videoStream = await ArchiveScanner.openZipEntryStream(item.zipPath, item.livePhotoVideoEntry);
             } else if (item.livePhotoVideoPath && fs.existsSync(item.livePhotoVideoPath)) {
               videoStream = fs.createReadStream(item.livePhotoVideoPath);
@@ -126,7 +129,10 @@ class ImmichClient {
         }
 
         let mainStream;
-        if (item.isZip) {
+        if (item.isCloudStream) {
+          const CloudTakeoutStreamer = require('./cloud-streamer');
+          mainStream = await CloudTakeoutStreamer.openCloudEntryStream(item, false);
+        } else if (item.isZip) {
           mainStream = await ArchiveScanner.openZipEntryStream(item.zipPath, item.entryName);
         } else {
           if (!fs.existsSync(item.fullPath)) {

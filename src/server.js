@@ -8,6 +8,8 @@ dotenv.config();
 
 const CheckpointManager = require('./checkpoint');
 const Migrator = require('./migrator');
+const GoogleDriveService = require('./google-drive');
+const CloudTakeoutStreamer = require('./cloud-streamer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,6 +18,8 @@ const DEFAULT_TAKEOUT = process.env.TAKEOUT_DIR || '';
 
 const checkpoint = new CheckpointManager(DATA_DIR);
 const migrator = new Migrator(checkpoint);
+const googleDriveService = new GoogleDriveService();
+let connectedGoogleUser = null;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -243,6 +247,189 @@ app.get('/api/status', (req, res) => {
     activeWorkers: Array.from(migrator.activeWorkers.values()),
     defaultTakeout: DEFAULT_TAKEOUT
   });
+});
+
+// =======================================================
+// GOOGLE TAKEOUT CANLI AKIŞ (CLOUD STREAM PIPE) ROUTES
+// =======================================================
+
+// Canlı Akış Bağlantısını Doğrula (0 Bayt İndirme)
+app.post('/api/cloud-stream/validate', async (req, res) => {
+  try {
+    const { curlOrUrl } = req.body;
+    console.log('[/api/cloud-stream/validate] Gelen girdi uzunluğu:', curlOrUrl?.length);
+    console.log('[/api/cloud-stream/validate] İlk 200 karakter:', curlOrUrl?.substring(0, 200));
+
+    if (!curlOrUrl || !curlOrUrl.trim()) {
+      return res.status(400).json({ success: false, error: 'Lütfen cURL komutu veya indirme bağlantısı girin.' });
+    }
+
+    const validatedInfo = await CloudTakeoutStreamer.validateLink(curlOrUrl);
+    console.log('[/api/cloud-stream/validate] Sonuç:', validatedInfo);
+    res.json({ success: true, info: validatedInfo });
+  } catch (err) {
+    console.error('[/api/cloud-stream/validate] Hata:', err.message);
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Canlı Akış Arşivini Tara (Bellekte İndirmeden)
+app.post('/api/cloud-stream/scan', async (req, res) => {
+  try {
+    const { validatedInfo, pairLivePhotos } = req.body;
+    if (!validatedInfo || !validatedInfo.finalUrl) {
+      return res.status(400).json({ success: false, error: 'Doğrulanmış arşiv bilgisi eksik.' });
+    }
+
+    const stats = await migrator.scanCloud(validatedInfo, {
+      pairLivePhotos: pairLivePhotos !== false
+    });
+    res.json({ success: true, stats });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Canlı Akış Aktarımını Başlat (0 Bayt Yerel Disk, 0 Bayt Drive Kotası)
+app.post('/api/cloud-stream/start', async (req, res) => {
+  try {
+    const {
+      immichUrl,
+      apiKey,
+      validatedInfo,
+      concurrency,
+      pairLivePhotos
+    } = req.body;
+
+    if (!immichUrl || !apiKey) {
+      return res.status(400).json({ success: false, error: 'Immich URL ve API Key eksik!' });
+    }
+
+    if (!validatedInfo || !validatedInfo.finalUrl) {
+      return res.status(400).json({ success: false, error: 'Doğrulanmış Takeout bağlantısı eksik!' });
+    }
+
+    await migrator.start({
+      immichUrl,
+      apiKey,
+      cloudInfo: validatedInfo,
+      concurrency: concurrency || 4,
+      pairLivePhotos: pairLivePhotos !== false,
+      organizeMedia: false // Bulut akışında yerel dosya olmadığı için organize kapatılır
+    });
+
+    res.json({ success: true, state: migrator.state });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// =======================================================
+// GOOGLE CONNECT & DIRECT CLOUD MIGRATION ROUTES
+// =======================================================
+
+// Google Bağlantı Durumu
+app.get('/api/google/status', (req, res) => {
+  res.json({
+    hasCredentials: !!(googleDriveService.clientId && googleDriveService.clientSecret),
+    isConnected: !!connectedGoogleUser,
+    user: connectedGoogleUser
+  });
+});
+
+// Google Cloud API Kimlik Bilgilerini Yapılandır
+app.post('/api/google/config', (req, res) => {
+  const { clientId, clientSecret, redirectUri } = req.body;
+  if (!clientId || !clientSecret) {
+    return res.status(400).json({ success: false, error: 'Client ID ve Client Secret zorunludur.' });
+  }
+
+  googleDriveService.clientId = clientId.trim();
+  googleDriveService.clientSecret = clientSecret.trim();
+  if (redirectUri) googleDriveService.redirectUri = redirectUri.trim();
+
+  googleDriveService.oauth2Client = new (require('googleapis').google.auth.OAuth2)(
+    googleDriveService.clientId,
+    googleDriveService.clientSecret,
+    googleDriveService.redirectUri
+  );
+
+  res.json({ success: true, message: 'Google Cloud kimlik bilgileri güncellendi.' });
+});
+
+// Google OAuth Giriş Bağlantısını Üret
+app.get('/auth/google/url', (req, res) => {
+  try {
+    const authUrl = googleDriveService.getAuthUrl();
+    res.json({ success: true, url: authUrl });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Google OAuth Geri Dönüş (Callback)
+app.get('/auth/google/callback', async (req, res) => {
+  try {
+    const code = req.query.code;
+    if (!code) {
+      return res.status(400).send('Yetkilendirme kodu bulunamadı.');
+    }
+
+    const { tokens, user } = await googleDriveService.exchangeCode(code);
+    connectedGoogleUser = user;
+
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Google Bağlantısı Başarılı</title>
+          <style>
+            body { background: #090a0f; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+            .card { background: #12151f; padding: 2rem; border-radius: 1rem; border: 1px solid #27272a; text-align: center; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h2>🎉 Google Hesabı Başarıyla Bağlandı!</h2>
+            <p>${user.name || user.email}</p>
+            <p>Pencere kapatılıyor, panele yönlendiriliyorsunuz...</p>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'GOOGLE_CONNECTED', user: ${JSON.stringify(user)} }, '*');
+                window.close();
+              } else {
+                window.location.href = '/?google_connected=1';
+              }
+            </script>
+          </div>
+        </body>
+      </html>
+    `);
+  } catch (err) {
+    res.status(500).send(`Google yetkilendirme hatası: ${err.message}`);
+  }
+});
+
+// Google Drive'daki Takeout Arşivlerini Listele
+app.get('/api/google/archives', async (req, res) => {
+  try {
+    if (!connectedGoogleUser) {
+      return res.status(401).json({ success: false, error: 'Google hesabı bağlı değil.' });
+    }
+
+    const archives = await googleDriveService.listTakeoutArchives();
+    res.json({ success: true, archives });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Google Hesabının Bağlantısını Kes
+app.post('/api/google/disconnect', (req, res) => {
+  connectedGoogleUser = null;
+  googleDriveService.tokens = null;
+  googleDriveService.drive = null;
+  res.json({ success: true, message: 'Google bağlantısı kesildi.' });
 });
 
 // API: Log Dosyasını İndir
