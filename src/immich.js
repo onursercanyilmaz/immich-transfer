@@ -129,6 +129,13 @@ class ImmichClient {
         if (item.isZip) {
           mainStream = await ArchiveScanner.openZipEntryStream(item.zipPath, item.entryName);
         } else {
+          if (!fs.existsSync(item.fullPath)) {
+            return {
+              success: false,
+              status: 'ERROR',
+              error: `Dosya diskte bulunamadı (Taşınmış veya silinmiş olabilir): ${item.fullPath}`
+            };
+          }
           mainStream = fs.createReadStream(item.fullPath);
         }
 
