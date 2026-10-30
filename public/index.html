@@ -922,7 +922,9 @@
       const pct = stats.percentage || 0;
       document.getElementById('metricPercent').textContent = `%${pct}`;
       document.getElementById('metricProgressBar').style.width = `${pct}%`;
-      document.getElementById('metricFileCount').textContent = `${(stats.processedFiles || 0).toLocaleString()} / ${(stats.pendingFiles || 0).toLocaleString()} ${t.fileUnit}`;
+      const totalFilesCount = stats.pendingFiles || stats.totalFiles || 0;
+      const displayProcessed = Math.min(stats.processedFiles || 0, totalFilesCount);
+      document.getElementById('metricFileCount').textContent = `${displayProcessed.toLocaleString()} / ${totalFilesCount.toLocaleString()} ${t.fileUnit}`;
 
       // Yumuşatılmış Hız Gösterimi (Kesinti ve dalgalanma önleyici)
       if (stats.speedBytesPerSec > 0) {

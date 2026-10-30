@@ -239,6 +239,7 @@ class Migrator extends EventEmitter {
   }
 
   pause() {
+    if (this.isPaused) return;
     this.isPaused = true;
     this.state = 'PAUSED';
     this.log('WARN', 'Aktarım duraklatıldı.');
@@ -246,11 +247,12 @@ class Migrator extends EventEmitter {
   }
 
   resume() {
+    if (!this.isPaused) return;
     this.isPaused = false;
     this.state = 'RUNNING';
     this.log('INFO', 'Aktarım devam ettiriliyor.');
     this.emit('status', { state: this.state });
-    this._runPool();
+    // Not: _runPool tekrar ÇAĞRILMAZ, mevcut bekleyen worker döngüsü uyanıp devam eder!
   }
 
   stop() {
@@ -262,12 +264,12 @@ class Migrator extends EventEmitter {
   }
 
   async _runPool() {
-    let index = 0;
+    this.currentIndex = 0;
     const workerPromises = [];
 
     const getNextItem = () => {
-      if (this.isStopped || index >= this.filesToProcess.length) return null;
-      return this.filesToProcess[index++];
+      if (this.isStopped || this.currentIndex >= this.filesToProcess.length) return null;
+      return this.filesToProcess[this.currentIndex++];
     };
 
     const worker = async (workerId) => {
