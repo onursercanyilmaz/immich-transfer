@@ -83,14 +83,18 @@ app.post('/api/test-connection', async (req, res) => {
 // API: Klasör Tarama
 app.post('/api/scan', async (req, res) => {
   try {
-    const { takeoutDir } = req.body;
+    const { takeoutDir, scanExtracted, scanZips, pairLivePhotos } = req.body;
     const targetDir = takeoutDir || DEFAULT_TAKEOUT;
 
     if (!fs.existsSync(targetDir)) {
       return res.status(404).json({ error: `Klasör bulunamadı: ${targetDir}` });
     }
 
-    const stats = await migrator.scan(targetDir);
+    const stats = await migrator.scan(targetDir, {
+      scanExtracted: scanExtracted !== false,
+      scanZips: scanZips !== false,
+      pairLivePhotos: pairLivePhotos !== false
+    });
     res.json({ success: true, stats });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -149,18 +153,21 @@ app.get('/api/browse', (req, res) => {
 });
 
 // API: Aktarımı Başlat
-app.post('/api/start', (req, res) => {
+app.post('/api/start', async (req, res) => {
   try {
-    const { immichUrl, apiKey, takeoutDir, concurrency } = req.body;
+    const { immichUrl, apiKey, takeoutDir, concurrency, scanExtracted, scanZips, pairLivePhotos } = req.body;
     if (!immichUrl || !apiKey) {
       return res.status(400).json({ error: 'Immich URL ve API Key eksik!' });
     }
 
-    migrator.start({
+    await migrator.start({
       immichUrl,
       apiKey,
       takeoutDir: takeoutDir || DEFAULT_TAKEOUT,
-      concurrency: concurrency || 4
+      concurrency: concurrency || 4,
+      scanExtracted: scanExtracted !== false,
+      scanZips: scanZips !== false,
+      pairLivePhotos: pairLivePhotos !== false
     });
 
     res.json({ success: true, state: migrator.state });

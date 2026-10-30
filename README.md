@@ -9,7 +9,7 @@
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
   [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?style=flat-square&logo=docker&logoColor=white)](docker-compose.yml)
   [![Node.js](https://img.shields.io/badge/Node.js-20+-339933.svg?style=flat-square&logo=node.js&logoColor=white)](package.json)
-  [![Tests](https://img.shields.io/badge/Tests-8%2F8%20Passing-success.svg?style=flat-square)](tests/)
+  [![Tests](https://img.shields.io/badge/Tests-9%2F9%20Passing-success.svg?style=flat-square)](tests/)
   [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg?style=flat-square)](https://github.com)
   [![i18n](https://img.shields.io/badge/Language-English%20%7C%20T%C3%BCrk%C3%A7e-indigo.svg?style=flat-square)](public/index.html)
 
@@ -44,6 +44,7 @@ Migrating 100+ GB of Google Photos exports is notoriously frustrating:
 | Feature | Description |
 | :--- | :--- |
 | 🌐 **Modern Web Dashboard** | Complete control via your browser (`http://localhost:3000`). No CLI commands needed after launch. |
+| 🎛️ **Selective Source Checkboxes** | Choose whether to scan **Extracted Folders**, **Direct ZIP Archives**, or **both**, plus toggle Live Photo pairing. |
 | 📦 **Direct ZIP Archive Reading** | Reads media directly from inside `.zip` files (Zip64 up to 8 PiB). **Zero disk extraction needed.** |
 | 📸 **Live & Motion Photos** | Pairs `.heic/.jpg` still images with `.mov/.mp4` motion clips and uploads as playable Live Photos (`livePhotoData`). |
 | 📁 **Interactive Folder Browser** | Type paths directly or click the **Browse** button to visually explore and pick directories. |

@@ -16,6 +16,9 @@ class Migrator extends EventEmitter {
     this.stats = {
       totalFiles: 0,
       scannedFiles: 0,
+      extractedCount: 0,
+      zipCount: 0,
+      livePhotoCount: 0,
       alreadyUploaded: 0,
       pendingFiles: 0,
       processedFiles: 0,
@@ -60,14 +63,38 @@ class Migrator extends EventEmitter {
     return user;
   }
 
-  async scan(takeoutDir) {
+  async scan(takeoutDir, options = {}) {
     this.state = 'SCANNING';
     this.emit('status', { state: this.state });
-    this.log('INFO', `Arşiv taranıyor (Klasörler, .zip ve Live Photo çiftleri): ${takeoutDir}`);
 
-    const allFiles = await TakeoutScanner.scan(takeoutDir);
+    const scanExtracted = options.scanExtracted !== false;
+    const scanZips = options.scanZips !== false;
+    const pairLivePhotos = options.pairLivePhotos !== false;
+
+    this.log('INFO', `Arşiv taranıyor: ${takeoutDir} (Klasör: ${scanExtracted ? 'Açık' : 'Kapalı'}, ZIP: ${scanZips ? 'Açık' : 'Kapalı'}, Live Photo: ${pairLivePhotos ? 'Açık' : 'Kapalı'})`);
+
+    const allFiles = await TakeoutScanner.scan(takeoutDir, { scanExtracted, scanZips, pairLivePhotos });
     this.stats.totalFiles = allFiles.length;
     this.stats.scannedFiles = allFiles.length;
+
+    let extractedCount = 0;
+    let zipCount = 0;
+    let livePhotoCount = 0;
+
+    for (const f of allFiles) {
+      if (f.isZip) {
+        zipCount++;
+      } else {
+        extractedCount++;
+      }
+      if (f.isLivePhoto) {
+        livePhotoCount++;
+      }
+    }
+
+    this.stats.extractedCount = extractedCount;
+    this.stats.zipCount = zipCount;
+    this.stats.livePhotoCount = livePhotoCount;
 
     this.filesToProcess = [];
     let alreadyUploaded = 0;
@@ -89,21 +116,30 @@ class Migrator extends EventEmitter {
     this.stats.processedFiles = 0;
     this.stats.percentage = this.stats.pendingFiles === 0 ? 100 : 0;
 
-    this.log('INFO', `Tarama tamamlandı: ${allFiles.length} medya bulundu. ${alreadyUploaded} önceden yüklenmiş, ${this.filesToProcess.length} yeni dosya yüklenecek.`);
+    this.log('INFO', `Tarama tamamlandı: ${allFiles.length} medya (${extractedCount} normal dosya, ${zipCount} ZIP içi, ${livePhotoCount} Live Photo). ${alreadyUploaded} önceden yüklenmiş, ${this.filesToProcess.length} yeni dosya yüklenecek.`);
     this.state = 'READY';
     this.emit('status', { state: this.state, stats: this.stats });
     return this.stats;
   }
 
-  start(config) {
+  async start(config) {
     if (this.state === 'RUNNING') return;
     this.config = config;
     this.client = new ImmichClient(config.immichUrl, config.apiKey);
     this.concurrency = parseInt(config.concurrency, 10) || 4;
     this.isPaused = false;
     this.isStopped = false;
-    this.state = 'RUNNING';
 
+    // Eğer henüz taranmadıysa veya beklemede dosya yoksa, önce tara
+    if (this.filesToProcess.length === 0 && this.stats.totalFiles === 0) {
+      await this.scan(config.takeoutDir, {
+        scanExtracted: config.scanExtracted !== false,
+        scanZips: config.scanZips !== false,
+        pairLivePhotos: config.pairLivePhotos !== false
+      });
+    }
+
+    this.state = 'RUNNING';
     this.log('INFO', `Aktarım başlatıldı. Paralellik (Concurrency): ${this.concurrency}`);
     this.emit('status', { state: this.state });
 

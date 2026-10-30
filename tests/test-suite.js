@@ -367,4 +367,64 @@ describe('Immich Transfer Test Suite (ZIP & Live Photo Edition)', () => {
     assert.equal(res.success, true, 'ZIP içindeki dosya başarıyla stream edilmeli');
     assert.ok(streamedBytes > 0, 'ZIP dosyasından veri akışı gerçekleşmeli');
   });
+
+  // TEST 9: Hibrit Dizin ve Seçici Tarama Seçenekleri (Checkbox Filtreleme)
+  test('9. Hybrid Directory & Selective Filters: Extracted, ZIP ve Live Photo toggle seçenekleri', async () => {
+    // TEST_TAKEOUT_DIR içine bir zip kopyalayalım (Böylece hem loose dosyalar hem .zip aynı dizinde olur)
+    const hybridZipDest = path.join(TEST_TAKEOUT_DIR, 'nested_archive.zip');
+    fs.copyFileSync(path.join(TEST_DIR, 'test_takeout.zip'), hybridZipDest);
+
+    // 1. Durum: Hem Extracted hem ZIP açık (Varsayılan)
+    const allResults = await TakeoutScanner.scan(TEST_TAKEOUT_DIR, {
+      scanExtracted: true,
+      scanZips: true,
+      pairLivePhotos: true
+    });
+    const hasLoose = allResults.some(f => !f.isZip);
+    const hasZip = allResults.some(f => f.isZip);
+    assert.ok(hasLoose, 'Normal klasör dosyaları bulunmalı');
+    assert.ok(hasZip, 'ZIP içi dosyalar bulunmalı');
+
+    // 2. Durum: Sadece ZIP açık, Extracted kapalı
+    const onlyZips = await TakeoutScanner.scan(TEST_TAKEOUT_DIR, {
+      scanExtracted: false,
+      scanZips: true
+    });
+    assert.ok(onlyZips.length > 0, 'ZIP içi dosyalar taranmalı');
+    assert.ok(onlyZips.every(f => f.isZip), 'Tüm sonuçlar ZIP içinden olmalı');
+
+    // 3. Durum: Sadece Extracted açık, ZIP kapalı
+    const onlyExtracted = await TakeoutScanner.scan(TEST_TAKEOUT_DIR, {
+      scanExtracted: true,
+      scanZips: false
+    });
+    assert.ok(onlyExtracted.length > 0, 'Normal dosyalar taranmalı');
+    assert.ok(onlyExtracted.every(f => !f.isZip), 'Hiçbir sonuç ZIP olmamalı');
+
+    // 4. Durum: pairLivePhotos: false olduğunda heic ve mov ayrı ayrı listelenmeli
+    const unpairResults = await TakeoutScanner.scan(TEST_TAKEOUT_DIR, {
+      scanExtracted: true,
+      scanZips: false,
+      pairLivePhotos: false
+    });
+    const heic = unpairResults.find(f => f.name === 'apple_live.heic');
+    const mov = unpairResults.find(f => f.name === 'apple_live.mov');
+    assert.ok(heic, 'apple_live.heic bulunmalı');
+    assert.ok(mov, 'apple_live.mov bağımsız dosya olarak bulunmalı');
+    assert.equal(heic.isLivePhoto, false, 'Live photo eşlenmemiş olmalı');
+
+    // 5. Migrator scan breakdown testi
+    const checkMgr = new CheckpointManager(TEST_CHECKPOINT_DIR);
+    const migrator = new Migrator(checkMgr);
+    const stats = await migrator.scan(TEST_TAKEOUT_DIR, {
+      scanExtracted: true,
+      scanZips: true,
+      pairLivePhotos: true
+    });
+
+    assert.ok(stats.extractedCount > 0, 'extractedCount > 0 olmalı');
+    assert.ok(stats.zipCount > 0, 'zipCount > 0 olmalı');
+    assert.ok(stats.livePhotoCount > 0, 'livePhotoCount > 0 olmalı');
+    assert.equal(stats.totalFiles, stats.extractedCount + stats.zipCount);
+  });
 });

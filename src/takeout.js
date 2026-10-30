@@ -20,26 +20,37 @@ class ArchiveScanner {
   /**
    * Bir dizini, ZIP arşivlerini veya tekil bir ZIP dosyasını derinlemesine tarar.
    * Motion / Live Photo çiftlerini (.heic/.jpg + .mov/.mp4) otomatik gruplar.
+   * @param {string} targetPath - Hedef dizin veya tekil .zip yolu
+   * @param {object} options - { scanExtracted: true, scanZips: true, pairLivePhotos: true }
    */
-  static async scan(targetPath) {
+  static async scan(targetPath, options = {}) {
     if (!fs.existsSync(targetPath)) {
       throw new Error(`Hedef yol bulunamadı: ${targetPath}`);
     }
 
+    const scanExtracted = options.scanExtracted !== false;
+    const scanZips = options.scanZips !== false;
+    const pairLivePhotos = options.pairLivePhotos !== false;
+
     const stat = fs.statSync(targetPath);
     if (stat.isFile() && targetPath.toLowerCase().endsWith('.zip')) {
+      if (!scanZips) return [];
       // Tekil ZIP dosyası
-      return await this._scanZipFile(targetPath);
+      return await this._scanZipFile(targetPath, { pairLivePhotos });
     }
 
     // Normal klasör (içinde loose dosyalar veya alt .zip dosyaları olabilir)
-    return await this._scanFolder(targetPath);
+    return await this._scanFolder(targetPath, { scanExtracted, scanZips, pairLivePhotos });
   }
 
   /**
    * Standart klasör taraması (içindeki .zip arşivleri dahil)
    */
-  static async _scanFolder(rootDir) {
+  static async _scanFolder(rootDir, options = {}) {
+    const scanExtracted = options.scanExtracted !== false;
+    const scanZips = options.scanZips !== false;
+    const pairLivePhotos = options.pairLivePhotos !== false;
+
     const rawFilesByDir = new Map(); // dirPath -> [ { fullPath, name, size, mtime, ext, stem } ]
     const zipFiles = [];
 
@@ -61,8 +72,10 @@ class ArchiveScanner {
         } else if (entry.isFile()) {
           const ext = path.extname(entry.name).toLowerCase();
           if (ext === '.zip') {
-            zipFiles.push(fullPath);
-          } else if (ALL_MEDIA_EXTENSIONS.has(ext)) {
+            if (scanZips) {
+              zipFiles.push(fullPath);
+            }
+          } else if (scanExtracted && ALL_MEDIA_EXTENSIONS.has(ext)) {
             try {
               const fileStat = fs.statSync(fullPath);
               if (!rawFilesByDir.has(currentDir)) {
@@ -84,64 +97,69 @@ class ArchiveScanner {
 
     walk(rootDir);
 
-    // 1. Klasördeki loose medya dosyalarını işle ve Live Photo'ları eşleştir
     const results = [];
-    for (const [dir, files] of rawFilesByDir.entries()) {
-      const pairedVideos = new Set();
 
-      // Önce Live Photo çiftlerini bul (Aynı klasörde aynı isimli Image + Video)
-      const images = files.filter(f => IMAGE_EXTENSIONS.has(f.ext));
-      const videos = files.filter(f => VIDEO_EXTENSIONS.has(f.ext));
+    // 1. Klasördeki loose medya dosyalarını işle
+    if (scanExtracted) {
+      for (const [dir, files] of rawFilesByDir.entries()) {
+        const pairedVideos = new Set();
+        const images = files.filter(f => IMAGE_EXTENSIONS.has(f.ext));
+        const videos = files.filter(f => VIDEO_EXTENSIONS.has(f.ext));
 
-      for (const img of images) {
-        // İsim eşleşmesi (örn: IMG_001.HEIC + IMG_001.MOV veya IMG_001.JPG + IMG_001.MP4)
-        const matchingVideo = videos.find(v => !pairedVideos.has(v.fullPath) && v.stem.toLowerCase() === img.stem.toLowerCase());
+        for (const img of images) {
+          let matchingVideo = null;
+          if (pairLivePhotos) {
+            matchingVideo = videos.find(v => !pairedVideos.has(v.fullPath) && v.stem.toLowerCase() === img.stem.toLowerCase());
+          }
 
-        const item = {
-          isZip: false,
-          fullPath: img.fullPath,
-          name: img.name,
-          imageSize: img.size,
-          size: img.size,
-          mtime: img.mtime,
-          ext: img.ext,
-          isLivePhoto: !!matchingVideo,
-          livePhotoVideoPath: matchingVideo ? matchingVideo.fullPath : null,
-          livePhotoVideoSize: matchingVideo ? matchingVideo.size : 0,
-          livePhotoVideoName: matchingVideo ? matchingVideo.name : null
-        };
+          const item = {
+            isZip: false,
+            fullPath: img.fullPath,
+            name: img.name,
+            imageSize: img.size,
+            size: img.size,
+            mtime: img.mtime,
+            ext: img.ext,
+            isLivePhoto: !!matchingVideo,
+            livePhotoVideoPath: matchingVideo ? matchingVideo.fullPath : null,
+            livePhotoVideoSize: matchingVideo ? matchingVideo.size : 0,
+            livePhotoVideoName: matchingVideo ? matchingVideo.name : null
+          };
 
-        if (matchingVideo) {
-          pairedVideos.add(matchingVideo.fullPath);
-          item.size += matchingVideo.size; // Toplam aktarım boyutuna videoyu da ekle
+          if (matchingVideo) {
+            pairedVideos.add(matchingVideo.fullPath);
+            item.size += matchingVideo.size; // Toplam aktarım boyutuna videoyu da ekle
+          }
+
+          results.push(item);
         }
 
-        results.push(item);
-      }
-
-      // Live photo çifti olmayan tekil videoları ekle
-      for (const vid of videos) {
-        if (!pairedVideos.has(vid.fullPath)) {
-          results.push({
-            isZip: false,
-            fullPath: vid.fullPath,
-            name: vid.name,
-            size: vid.size,
-            mtime: vid.mtime,
-            ext: vid.ext,
-            isLivePhoto: false
-          });
+        // Live photo çifti olmayan tekil videoları ekle
+        for (const vid of videos) {
+          if (!pairedVideos.has(vid.fullPath)) {
+            results.push({
+              isZip: false,
+              fullPath: vid.fullPath,
+              name: vid.name,
+              size: vid.size,
+              mtime: vid.mtime,
+              ext: vid.ext,
+              isLivePhoto: false
+            });
+          }
         }
       }
     }
 
     // 2. Klasör içinde bulunan tüm .zip arşivlerini de doğrudan tara
-    for (const zipPath of zipFiles) {
-      try {
-        const zipResults = await this._scanZipFile(zipPath);
-        results.push(...zipResults);
-      } catch (err) {
-        console.error(`[ArchiveScanner] ZIP okuma hatası (${zipPath}):`, err.message);
+    if (scanZips) {
+      for (const zipPath of zipFiles) {
+        try {
+          const zipResults = await this._scanZipFile(zipPath, { pairLivePhotos });
+          results.push(...zipResults);
+        } catch (err) {
+          console.error(`[ArchiveScanner] ZIP okuma hatası (${zipPath}):`, err.message);
+        }
       }
     }
 
@@ -151,7 +169,8 @@ class ArchiveScanner {
   /**
    * ZIP dosyasını diske açmadan (zero-extraction) doğrudan içerisinden okur.
    */
-  static _scanZipFile(zipPath) {
+  static _scanZipFile(zipPath, options = {}) {
+    const pairLivePhotos = options.pairLivePhotos !== false;
     return new Promise((resolve, reject) => {
       yauzl.open(zipPath, { lazyEntries: true, autoClose: false }, (err, zipfile) => {
         if (err) return reject(err);
@@ -215,11 +234,14 @@ class ArchiveScanner {
               const imgExt = path.extname(img.fileName).toLowerCase();
               const imgStem = path.basename(img.fileName, imgExt);
 
-              const matchingVideo = videos.find(v => {
-                const vidExt = path.extname(v.fileName).toLowerCase();
-                const vidStem = path.basename(v.fileName, vidExt);
-                return !pairedVideoEntries.has(v.fileName) && vidStem.toLowerCase() === imgStem.toLowerCase();
-              });
+              let matchingVideo = null;
+              if (pairLivePhotos) {
+                matchingVideo = videos.find(v => {
+                  const vidExt = path.extname(v.fileName).toLowerCase();
+                  const vidStem = path.basename(v.fileName, vidExt);
+                  return !pairedVideoEntries.has(v.fileName) && vidStem.toLowerCase() === imgStem.toLowerCase();
+                });
+              }
 
               // JSON Sidecar eşleştir
               const jsonContent = ArchiveScanner._findZipJson(img.fileName, jsonSidecars);
