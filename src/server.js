@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const express = require('express');
 const dotenv = require('dotenv');
 
@@ -114,11 +115,12 @@ app.get('/api/browse', (req, res) => {
     } else if (fs.existsSync('/takeout')) {
       targetDir = '/takeout';
     } else {
-      targetDir = '/';
+      // macOS/Linux kullanıcısının ana klasörü (örn: /Users/onur)
+      targetDir = os.homedir() || process.cwd();
     }
 
     if (!fs.existsSync(targetDir)) {
-      targetDir = process.cwd();
+      targetDir = os.homedir() || process.cwd();
     }
 
     const stat = fs.statSync(targetDir);
@@ -126,19 +128,43 @@ app.get('/api/browse', (req, res) => {
       targetDir = path.dirname(targetDir);
     }
 
-    const entries = fs.readdirSync(targetDir, { withFileTypes: true });
+    let entries = [];
+    try {
+      entries = fs.readdirSync(targetDir, { withFileTypes: true });
+    } catch (readErr) {
+      return res.json({
+        success: true,
+        current: targetDir,
+        parent: path.dirname(targetDir) !== targetDir ? path.dirname(targetDir) : null,
+        directories: [],
+        warning: `Erişim kısıtlı: ${readErr.message}`
+      });
+    }
+
     const directories = [];
 
     for (const entry of entries) {
-      if (entry.isDirectory() && !entry.name.startsWith('.')) {
+      if (entry.name.startsWith('.')) continue;
+
+      if (entry.isDirectory()) {
         directories.push({
           name: entry.name,
-          path: path.join(targetDir, entry.name)
+          path: path.join(targetDir, entry.name),
+          isZip: false
+        });
+      } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.zip')) {
+        directories.push({
+          name: entry.name,
+          path: path.join(targetDir, entry.name),
+          isZip: true
         });
       }
     }
 
-    directories.sort((a, b) => a.name.localeCompare(b.name));
+    directories.sort((a, b) => {
+      if (a.isZip !== b.isZip) return a.isZip ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    });
 
     const parent = path.dirname(targetDir);
     res.json({

@@ -806,12 +806,31 @@
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'w-full text-left p-2.5 rounded-xl hover:bg-zinc-800/80 text-zinc-200 transition flex items-center space-x-3 group border border-transparent hover:border-zinc-700/60';
+            
+            const iconSvg = dir.isZip
+              ? `<span class="text-indigo-400 text-base shrink-0">🗜️</span>`
+              : `<svg class="w-4 h-4 text-amber-400 group-hover:scale-110 transition shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>`;
+
+            const typeLabel = dir.isZip
+              ? `<span class="text-[10px] text-indigo-400/80 uppercase font-mono px-1.5 py-0.5 rounded bg-indigo-950/60 border border-indigo-800/40 shrink-0">ZIP</span>`
+              : `<svg class="w-3.5 h-3.5 text-zinc-600 group-hover:text-zinc-300 transition shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>`;
+
             btn.innerHTML = `
-              <svg class="w-4 h-4 text-amber-400 group-hover:scale-110 transition shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+              ${iconSvg}
               <span class="truncate flex-1 font-mono text-xs">${escapeHtml(dir.name)}</span>
-              <svg class="w-3.5 h-3.5 text-zinc-600 group-hover:text-zinc-300 transition shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+              ${typeLabel}
             `;
-            btn.onclick = () => loadBrowserDir(dir.path);
+
+            if (dir.isZip) {
+              btn.onclick = () => {
+                document.getElementById('inputTakeoutDir').value = dir.path;
+                localStorage.setItem('takeout_dir', dir.path);
+                closeFolderBrowser();
+              };
+            } else {
+              btn.onclick = () => loadBrowserDir(dir.path);
+            }
+
             listEl.appendChild(btn);
           });
         } else {
@@ -1240,6 +1259,9 @@
       logs.forEach(appendLog);
     }
 
+    document.getElementById('inputApiKey').addEventListener('input', (e) => {
+      localStorage.setItem('immich_api_key', e.target.value.trim());
+    });
     document.getElementById('inputImmichUrl').addEventListener('input', (e) => {
       localStorage.setItem('immich_url', e.target.value.trim());
     });
@@ -1249,6 +1271,20 @@
 
     window.addEventListener('DOMContentLoaded', () => {
       setLanguage(currentLang);
+
+      const savedApiKey = localStorage.getItem('immich_api_key');
+      if (savedApiKey && !document.getElementById('inputApiKey').value) {
+        document.getElementById('inputApiKey').value = savedApiKey;
+      }
+      const savedUrl = localStorage.getItem('immich_url');
+      if (savedUrl && !document.getElementById('inputImmichUrl').value) {
+        document.getElementById('inputImmichUrl').value = savedUrl;
+      }
+      const savedDir = localStorage.getItem('takeout_dir');
+      if (savedDir && !document.getElementById('inputTakeoutDir').value) {
+        document.getElementById('inputTakeoutDir').value = savedDir;
+      }
+
       if (urlParams.get('demo') === '1') {
         loadDemoMode();
       } else {

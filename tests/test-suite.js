@@ -117,8 +117,8 @@ describe('Immich Transfer Test Suite (ZIP & Live Photo Edition)', () => {
           const match = bodyStr.match(/name="deviceAssetId"\r\n\r\n([a-f0-9]+)/);
           const deviceAssetId = match ? match[1] : 'unknown';
 
-          // Live Photo kontrolü
-          if (bodyStr.includes('name="livePhotoData"')) {
+          // Live Photo kontrolü (Immich resmi spesifikasyonu: livePhotoVideoId)
+          if (bodyStr.includes('name="livePhotoVideoId"') || bodyStr.includes('name="livePhotoData"')) {
             livePhotoUploadedCount++;
           }
 
