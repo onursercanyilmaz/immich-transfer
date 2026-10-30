@@ -792,6 +792,9 @@
     // -------------------------------------------------------------
     // PROGRESS & STATUS LOGIC
     // -------------------------------------------------------------
+    let lastValidEtaSeconds = 0;
+    let lastValidSpeedMb = null;
+
     function updateStateBadge(state) {
       currentState = state;
       const t = I18N[currentLang];
@@ -801,6 +804,8 @@
       const stopBtn = document.getElementById('btnStop');
 
       if (state === 'IDLE') {
+        lastValidEtaSeconds = 0;
+        lastValidSpeedMb = null;
         badge.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-zinc-900/90 text-zinc-400 border border-zinc-800';
         badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-zinc-500"></span> <span>${t.status_idle}</span>`;
         pauseBtn.disabled = true;
@@ -825,6 +830,8 @@
         badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400"></span> <span>${t.status_paused}</span>`;
         pauseBtn.textContent = t.btnResume;
       } else if (state === 'COMPLETED') {
+        lastValidEtaSeconds = 0;
+        lastValidSpeedMb = null;
         badge.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-emerald-900/80 text-emerald-200 border border-emerald-600/80';
         badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> <span>${t.status_completed}</span>`;
         startBtn.disabled = false;
@@ -832,6 +839,8 @@
         stopBtn.disabled = true;
         document.getElementById('workersBox').classList.add('hidden');
       } else if (state === 'STOPPED') {
+        lastValidEtaSeconds = 0;
+        lastValidSpeedMb = null;
         badge.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-rose-950/80 text-rose-300 border border-rose-700/80';
         badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500"></span> <span>${t.status_stopped}</span>`;
         startBtn.disabled = false;
@@ -851,9 +860,29 @@
       document.getElementById('metricProgressBar').style.width = `${pct}%`;
       document.getElementById('metricFileCount').textContent = `${(stats.processedFiles || 0).toLocaleString()} / ${(stats.pendingFiles || 0).toLocaleString()} ${t.fileUnit}`;
 
-      const speedMb = ((stats.speedBytesPerSec || 0) / (1024 * 1024)).toFixed(1);
-      document.getElementById('metricSpeed').textContent = `${speedMb} MB/s`;
-      document.getElementById('metricEta').textContent = formatTime(stats.etaSeconds);
+      // Yumuşatılmış Hız Gösterimi (Kesinti ve dalgalanma önleyici)
+      if (stats.speedBytesPerSec > 0) {
+        lastValidSpeedMb = ((stats.speedBytesPerSec || 0) / (1024 * 1024)).toFixed(1);
+        document.getElementById('metricSpeed').textContent = `${lastValidSpeedMb} MB/s`;
+      } else if (currentState === 'RUNNING' && lastValidSpeedMb && pct < 100) {
+        // Dosya geçişlerindeki anlık milisaniyelik duraksamalarda hız bir anda kaybolmasın
+        document.getElementById('metricSpeed').textContent = `${lastValidSpeedMb} MB/s`;
+      } else {
+        document.getElementById('metricSpeed').textContent = '0.0 MB/s';
+      }
+
+      // Kalan Süre (ETA) Gösterimi (Kesinti ve kaybolma önleyici)
+      if (stats.etaSeconds > 0) {
+        lastValidEtaSeconds = stats.etaSeconds;
+        document.getElementById('metricEta').textContent = formatTime(stats.etaSeconds);
+      } else if (currentState === 'RUNNING' && lastValidEtaSeconds > 0 && pct < 100) {
+        // Sunucu yanıt beklerken ETA '--:--:--' olarak kaybolmasın, son hesaplanan tahmini korusun
+        document.getElementById('metricEta').textContent = formatTime(lastValidEtaSeconds);
+      } else if (currentState === 'COMPLETED' || pct >= 100) {
+        document.getElementById('metricEta').textContent = '00:00:00';
+      } else {
+        document.getElementById('metricEta').textContent = '--:--:--';
+      }
 
       document.getElementById('metricUploadedGb').textContent = formatBytes(stats.uploadedBytes);
       document.getElementById('metricTotalGb').textContent = `/ ${formatBytes(stats.totalBytes)}`;

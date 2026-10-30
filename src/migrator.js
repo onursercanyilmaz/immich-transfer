@@ -37,6 +37,8 @@ class Migrator extends EventEmitter {
     this.isStopped = false;
     this.speedSampleTimer = null;
     this.lastUploadedBytes = 0;
+    this.speedSamples = []; // [ { time, bytes } ]
+    this.lastProgressEmitTime = 0;
 
     // Paralel yükleme sırasında aynı dosyanın mükerrer yüklenmesini önleyen in-flight mutex & parmak izi seti
     this.inFlightAssets = new Set();
@@ -143,16 +145,57 @@ class Migrator extends EventEmitter {
     this.log('INFO', `Aktarım başlatıldı. Paralellik (Concurrency): ${this.concurrency}`);
     this.emit('status', { state: this.state });
 
-    // Hız ve ETA hesaplayıcı
-    this.lastUploadedBytes = 0;
+    // Yumuşatılmış (Smoothed Sliding Window + EMA) Hız ve ETA hesaplayıcı
+    this.lastUploadedBytes = this.stats.uploadedBytes;
+    this.speedSamples = [{ time: Date.now(), bytes: this.stats.uploadedBytes }];
+    this.lastProgressEmitTime = 0;
+
+    if (this.speedSampleTimer) clearInterval(this.speedSampleTimer);
     this.speedSampleTimer = setInterval(() => {
       if (this.state === 'RUNNING' && !this.isPaused) {
-        const delta = this.stats.uploadedBytes - this.lastUploadedBytes;
-        this.lastUploadedBytes = this.stats.uploadedBytes;
-        this.stats.speedBytesPerSec = delta; // Her 1 saniyede artan byte
+        const now = Date.now();
+        this.speedSamples.push({ time: now, bytes: this.stats.uploadedBytes });
+
+        // Son 8 saniyeden eski örnekleri temizle (en az 2 örnek tutarak)
+        while (this.speedSamples.length > 2 && (now - this.speedSamples[0].time) > 8000) {
+          this.speedSamples.shift();
+        }
+
+        const oldestSample = this.speedSamples[0];
+        const timeSpanSec = (now - oldestSample.time) / 1000;
+        const bytesDelta = Math.max(0, this.stats.uploadedBytes - oldestSample.bytes);
+
+        if (timeSpanSec >= 0.8) {
+          const rawWindowSpeed = Math.round(bytesDelta / timeSpanSec);
+
+          if (rawWindowSpeed > 0) {
+            if (this.stats.speedBytesPerSec === 0) {
+              this.stats.speedBytesPerSec = rawWindowSpeed;
+            } else {
+              // %60 önceki yumuşatılmış hız + %40 anlık pencere hızı
+              this.stats.speedBytesPerSec = Math.round(this.stats.speedBytesPerSec * 0.60 + rawWindowSpeed * 0.40);
+            }
+          } else {
+            // Anlık dosya arası duraksamalarda hızı aniden sıfırlamak yerine yavaşça sönümle
+            this.stats.speedBytesPerSec = Math.round(this.stats.speedBytesPerSec * 0.85);
+            if (this.stats.speedBytesPerSec < 1024) this.stats.speedBytesPerSec = 0;
+          }
+        }
 
         const remainingBytes = Math.max(0, this.stats.totalBytes - this.stats.uploadedBytes);
-        this.stats.etaSeconds = delta > 0 ? Math.round(remainingBytes / delta) : 0;
+        if (this.stats.speedBytesPerSec > 1024 && remainingBytes > 0) {
+          const targetEta = Math.round(remainingBytes / this.stats.speedBytesPerSec);
+          if (this.stats.etaSeconds === 0) {
+            this.stats.etaSeconds = targetEta;
+          } else {
+            // ETA ani sıçramalarını önleyen yumuşatma
+            this.stats.etaSeconds = Math.round(this.stats.etaSeconds * 0.70 + targetEta * 0.30);
+          }
+        } else if (remainingBytes === 0) {
+          this.stats.etaSeconds = 0;
+          this.stats.speedBytesPerSec = 0;
+        }
+
         this.emit('progress', this.stats);
       }
     }, 1000);
@@ -233,7 +276,13 @@ class Migrator extends EventEmitter {
           if (this.stats.totalBytes > 0) {
             this.stats.percentage = Math.min(100, Math.round((this.stats.uploadedBytes / this.stats.totalBytes) * 100));
           }
-          this.emit('progress', this.stats);
+
+          // Aşırı SSE trafiğini engellemek ve UI'ı akıcı tutmak için en fazla 250ms'de bir emit et
+          const now = Date.now();
+          if (now - this.lastProgressEmitTime >= 250) {
+            this.lastProgressEmitTime = now;
+            this.emit('progress', this.stats);
+          }
         };
 
         let result;
