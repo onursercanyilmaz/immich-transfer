@@ -345,6 +345,12 @@ class Migrator extends EventEmitter {
         this.activeWorkers.set(workerId, item.name);
         this.emit('workers', Array.from(this.activeWorkers.values()));
 
+        // Bulut akışında JSON yan verisi gerektiği anda lazy olarak okunur
+        if (item.isCloudStream && item.jsonEntry && !item.jsonContent) {
+          const CloudTakeoutStreamer = require('./cloud-streamer');
+          item.jsonContent = await CloudTakeoutStreamer.readEntryContent(item.zipfile, item.jsonEntry);
+        }
+
         const meta = await TakeoutScanner.parseMetadata(item);
 
         // --- PARALEL MÜKERRER (DUPLICATE) ENGELLEME KORUMASI ---

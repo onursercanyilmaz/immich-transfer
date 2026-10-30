@@ -184,7 +184,7 @@ async function runAllTests() {
     assert.ok(livePhotoItem, 'vacation_photo.jpg bulunmalı');
     assert.strictEqual(livePhotoItem.isLivePhoto, true, 'Live Photo eşleşmeli');
     assert.strictEqual(livePhotoItem.livePhotoVideoName, 'vacation_photo.mov', 'Live Photo videosu vacation_photo.mov olmalı');
-    assert.ok(livePhotoItem.jsonContent, 'Takeout JSON yan verisi bellek tamponuna okunmuş olmalı');
+    assert.ok(livePhotoItem.jsonEntry || livePhotoItem.jsonContent, 'Takeout JSON yan verisi eşleşmiş olmalı');
 
     const standaloneVideo = remoteFiles.find(f => f.name === 'alone_video.mp4');
     assert.ok(standaloneVideo, 'alone_video.mp4 bulunmalı');

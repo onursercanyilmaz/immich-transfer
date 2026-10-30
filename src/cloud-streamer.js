@@ -221,7 +221,7 @@ class CloudTakeoutStreamer {
         if (err) return reject(err);
 
         const mediaEntries = [];
-        const jsonSidecars = new Map(); // entryName -> raw json string
+        const jsonEntries = new Map(); // entryName -> entry object (içeriği tarama sırasında indirilmez!)
 
         zipfile.readEntry();
 
@@ -235,22 +235,10 @@ class CloudTakeoutStreamer {
           const ext = path.extname(entry.fileName).toLowerCase();
 
           if (ext === '.json') {
-            // JSON yan dosyasını bellek tamponuna oku
-            zipfile.openReadStream(entry, (err, readStream) => {
-              if (err) {
-                zipfile.readEntry();
-                return;
-              }
-              const chunks = [];
-              readStream.on('data', chunk => chunks.push(chunk));
-              readStream.on('end', () => {
-                const content = Buffer.concat(chunks).toString('utf8');
-                jsonSidecars.set(entry.fileName, content);
-                jsonSidecars.set(entry.fileName.toLowerCase(), content);
-                zipfile.readEntry();
-              });
-              readStream.on('error', () => zipfile.readEntry());
-            });
+            // Hızlı tarama: JSON içeriğini ağdan indirme, sadece dizin haritasına kaydet
+            jsonEntries.set(entry.fileName, entry);
+            jsonEntries.set(entry.fileName.toLowerCase(), entry);
+            zipfile.readEntry();
           } else if (IMAGE_EXTENSIONS.has(ext) || VIDEO_EXTENSIONS.has(ext)) {
             mediaEntries.push(entry);
             zipfile.readEntry();
@@ -265,8 +253,6 @@ class CloudTakeoutStreamer {
           const images = mediaEntries.filter(e => IMAGE_EXTENSIONS.has(path.extname(e.fileName).toLowerCase()));
           const videos = mediaEntries.filter(e => VIDEO_EXTENSIONS.has(path.extname(e.fileName).toLowerCase()));
 
-          const ArchiveScanner = require('./takeout');
-
           for (const img of images) {
             const imgExt = path.extname(img.fileName).toLowerCase();
             const imgStem = path.basename(img.fileName, imgExt);
@@ -280,7 +266,11 @@ class CloudTakeoutStreamer {
               });
             }
 
-            const jsonContent = ArchiveScanner._findZipJson(img.fileName, jsonSidecars);
+            const jsonEntry = jsonEntries.get(img.fileName + '.json') ||
+                              jsonEntries.get(img.fileName.toLowerCase() + '.json') ||
+                              jsonEntries.get(img.fileName.substring(0, img.fileName.length - imgExt.length) + '.json') ||
+                              jsonEntries.get(img.fileName.substring(0, img.fileName.length - imgExt.length).toLowerCase() + '.json') ||
+                              null;
 
             const item = {
               isCloudStream: true,
@@ -294,7 +284,8 @@ class CloudTakeoutStreamer {
               size: img.uncompressedSize,
               mtime: img.getLastModDate(),
               ext: imgExt,
-              jsonContent,
+              jsonEntry,
+              jsonContent: null,
               isLivePhoto: !!matchingVideo,
               livePhotoVideoEntry: matchingVideo ? matchingVideo.fileName : null,
               livePhotoVideoSize: matchingVideo ? matchingVideo.uncompressedSize : 0,
@@ -316,7 +307,12 @@ class CloudTakeoutStreamer {
           for (const vid of videos) {
             if (!pairedVideoEntries.has(vid.fileName)) {
               const vidExt = path.extname(vid.fileName).toLowerCase();
-              const jsonContent = ArchiveScanner._findZipJson(vid.fileName, jsonSidecars);
+              const jsonEntry = jsonEntries.get(vid.fileName + '.json') ||
+                                jsonEntries.get(vid.fileName.toLowerCase() + '.json') ||
+                                jsonEntries.get(vid.fileName.substring(0, vid.fileName.length - vidExt.length) + '.json') ||
+                                jsonEntries.get(vid.fileName.substring(0, vid.fileName.length - vidExt.length).toLowerCase() + '.json') ||
+                                null;
+
               results.push({
                 isCloudStream: true,
                 isZip: true,
@@ -328,7 +324,8 @@ class CloudTakeoutStreamer {
                 size: vid.uncompressedSize,
                 mtime: vid.getLastModDate(),
                 ext: vidExt,
-                jsonContent,
+                jsonEntry,
+                jsonContent: null,
                 isLivePhoto: false,
                 zipfile,
                 entry: vid
@@ -340,6 +337,22 @@ class CloudTakeoutStreamer {
         });
 
         zipfile.on('error', reject);
+      });
+    });
+  }
+
+  /**
+   * İhtiyaç anında (yükleme sırasında) bir girdinin içeriğini string olarak okur
+   */
+  static readEntryContent(zipfile, entry) {
+    return new Promise((resolve) => {
+      if (!zipfile || !entry) return resolve(null);
+      zipfile.openReadStream(entry, (err, stream) => {
+        if (err) return resolve(null);
+        const chunks = [];
+        stream.on('data', c => chunks.push(c));
+        stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        stream.on('error', () => resolve(null));
       });
     });
   }
