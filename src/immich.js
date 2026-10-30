@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const FormData = require('form-data');
 const mime = require('mime-types');
+const ArchiveScanner = require('./takeout');
 
 class ImmichClient {
   constructor(baseUrl, apiKey) {
@@ -35,13 +36,30 @@ class ImmichClient {
     }
   }
 
-  async uploadAsset(mediaPath, metadata, onProgressChunk = null, maxRetries = 3) {
-    const filename = path.basename(mediaPath);
-    const stat = fs.statSync(mediaPath);
-    const mimeType = mime.lookup(mediaPath) || 'application/octet-stream';
+  /**
+   * Medya dosyasını (ve varsa Live Photo video bileşenini) Immich'e aktarır.
+   * item: Medya nesnesi veya doğrudan dosya yolu string'i
+   */
+  async uploadAsset(itemOrPath, metadata, onProgressChunk = null, maxRetries = 3) {
+    let item;
+    if (typeof itemOrPath === 'string') {
+      const stat = fs.statSync(itemOrPath);
+      item = {
+        isZip: false,
+        fullPath: itemOrPath,
+        name: path.basename(itemOrPath),
+        size: stat.size,
+        isLivePhoto: false
+      };
+    } else {
+      item = itemOrPath;
+    }
 
-    // Unique deviceAssetId
-    const rawId = `${filename}_${stat.size}_${metadata.createdAt}`;
+    const filename = item.name;
+    const mimeType = mime.lookup(filename) || 'application/octet-stream';
+
+    // Unique deviceAssetId üretimi
+    const rawId = `${filename}_${item.size}_${metadata.createdAt}`;
     const deviceAssetId = crypto.createHash('sha1').update(rawId).digest('hex');
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -53,18 +71,53 @@ class ImmichClient {
         form.append('fileModifiedAt', metadata.modifiedAt);
         form.append('isFavorite', metadata.isFavorite ? 'true' : 'false');
 
-        const fileStream = fs.createReadStream(mediaPath);
+        // 1. Ana Medya Akışı (Image / Standalone Video)
+        let mainStream;
+        if (item.isZip) {
+          mainStream = await ArchiveScanner.openZipEntryStream(item.zipPath, item.entryName);
+        } else {
+          mainStream = fs.createReadStream(item.fullPath);
+        }
+
         if (onProgressChunk) {
-          fileStream.on('data', (chunk) => {
+          mainStream.on('data', (chunk) => {
             onProgressChunk(chunk.length);
           });
         }
 
-        form.append('assetData', fileStream, {
+        const assetLength = item.imageSize || item.size;
+        form.append('assetData', mainStream, {
           filename,
           contentType: mimeType,
-          knownLength: stat.size
+          knownLength: assetLength
         });
+
+        // 2. Canlı / Hareketli Fotoğraf (Live Photo / Motion Photo Video Akışı)
+        if (item.isLivePhoto) {
+          let videoStream;
+          const videoName = item.livePhotoVideoName || 'motion.mov';
+          const videoMime = mime.lookup(videoName) || 'video/quicktime';
+
+          if (item.isZip && item.livePhotoVideoEntry) {
+            videoStream = await ArchiveScanner.openZipEntryStream(item.zipPath, item.livePhotoVideoEntry);
+          } else if (item.livePhotoVideoPath) {
+            videoStream = fs.createReadStream(item.livePhotoVideoPath);
+          }
+
+          if (videoStream) {
+            if (onProgressChunk) {
+              videoStream.on('data', (chunk) => {
+                onProgressChunk(chunk.length);
+              });
+            }
+
+            form.append('livePhotoData', videoStream, {
+              filename: videoName,
+              contentType: videoMime,
+              knownLength: item.livePhotoVideoSize
+            });
+          }
+        }
 
         const res = await this.client.post('/assets', form, {
           headers: form.getHeaders(),

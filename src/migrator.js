@@ -63,9 +63,9 @@ class Migrator extends EventEmitter {
   async scan(takeoutDir) {
     this.state = 'SCANNING';
     this.emit('status', { state: this.state });
-    this.log('INFO', `Takeout dizini taranıyor: ${takeoutDir}`);
+    this.log('INFO', `Arşiv taranıyor (Klasörler, .zip ve Live Photo çiftleri): ${takeoutDir}`);
 
-    const allFiles = TakeoutScanner.scanDirectory(takeoutDir);
+    const allFiles = await TakeoutScanner.scan(takeoutDir);
     this.stats.totalFiles = allFiles.length;
     this.stats.scannedFiles = allFiles.length;
 
@@ -169,16 +169,12 @@ class Migrator extends EventEmitter {
         this.activeWorkers.set(workerId, item.name);
         this.emit('workers', Array.from(this.activeWorkers.values()));
 
-        const meta = TakeoutScanner.parseMetadata(item.fullPath, item.mtime);
+        const meta = TakeoutScanner.parseMetadata(item);
 
         // --- PARALEL MÜKERRER (DUPLICATE) ENGELLEME KORUMASI ---
-        // Takeout arşivinde aynı fotoğraf hem 'Photos from 2023' hem de bir 'Albüm' içinde yer alabilir.
-        // Dosya adı, boyutu ve çekim tarihi parmak izi oluşturur.
         const assetFingerprint = `${item.name}_${item.size}_${meta.createdAt}`;
 
         if (this.completedFingerprints.has(assetFingerprint) || this.inFlightAssets.has(assetFingerprint)) {
-          // Bu dosya ya başka bir worker tarafından o anda yükleniyor ya da az önce tamamlandı!
-          // 0 KB ağ harcayarak doğrudan atla
           this.stats.duplicateCount++;
           this.stats.processedFiles++;
           this.stats.uploadedBytes += item.size;
@@ -206,9 +202,8 @@ class Migrator extends EventEmitter {
 
         let result;
         try {
-          result = await this.client.uploadAsset(item.fullPath, meta, onProgress);
+          result = await this.client.uploadAsset(item, meta, onProgress);
         } finally {
-          // Yükleme bitince in-flight kilidini kaldır
           this.inFlightAssets.delete(assetFingerprint);
         }
 
@@ -235,7 +230,8 @@ class Migrator extends EventEmitter {
           } else {
             this.stats.successCount++;
             this.checkpoint.record(item.fullPath, item.size, 'SUCCESS', result.id);
-            this.log('SUCCESS', `Yüklendi: ${item.name} (${(item.size / (1024 * 1024)).toFixed(2)} MB)`);
+            const liveTag = item.isLivePhoto ? ` (Live Photo 📸+🎥)` : '';
+            this.log('SUCCESS', `Yüklendi${liveTag}: ${item.name} (${(item.size / (1024 * 1024)).toFixed(2)} MB)`);
           }
         } else {
           this.stats.errorCount++;

@@ -12,9 +12,16 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "form-data": "^4.0.0",
-    "mime-types": "^2.1.35"
+    "mime-types": "^2.1.35",
+    "yauzl": "^3.4.0"
   },
-  "keywords": ["immich", "google-photos", "takeout", "migration", "docker"],
+  "keywords": [
+    "immich",
+    "google-photos",
+    "takeout",
+    "migration",
+    "docker"
+  ],
   "author": "",
   "license": "MIT"
 }
