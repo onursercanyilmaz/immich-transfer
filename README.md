@@ -1,79 +1,101 @@
-# Immich Google Takeout Transfer Tool
+# 🚀 Immich Google Takeout Migrator (Web UI & Docker)
 
-Google Takeout ile indirilen devasa fotoğraf ve video arşivlerini (120 GB+) self-hosted **Immich** sunucunuza aktaran yüksek performanslı, dayanıklı ve şık terminal arayüzüne sahip Python betiği.
+Google Takeout ile indirilen devasa fotoğraf ve video arşivlerini (120 GB+) self-hosted **Immich** sunucunuza kolayca, güvenle ve yüksek hızla aktarmanızı sağlayan modern, Docker destekli ve web arayüzlü göç aracı.
 
-## Öne Çıkan Özellikler
-
-1. **Asla Otomatik Kapanmayan Terminal:** İster aktarım tamamlansın, ister elektrik/bağlantı kopsun, terminal ekranı asla kendiliğinden kapanmaz. Sonuçları görebilmeniz için sizden `ENTER` tuşuna basmanızı bekler.
-2. **Kalıcı `fsync` Loglama (`transfer.log`):** İşletim sisteminin önbelleklemesi atlatılarak `os.fsync()` ile diske anında fiziksel yazım yapılır. Bilgisayar aniden kapansa dahi en son hangi dosyada kalındığı saniyesi saniyesine kayıt altındadır (`tail -f transfer.log` ile izlenebilir).
-3. **Otomatik Ağ Yeniden Deneme (Exponential Backoff):** Wi-Fi veya sunucu anlık kesilirse betik çökmez; kademeli sürelerle tekrar deneyerek devam eder.
-4. **Paralel & Eşzamanlı Yükleme (Multi-threading):** `CONCURRENCY` ayarı ile birden fazla dosyayı aynı anda yükleyerek bant genişliğini ve ev ağını maksimum verimle kullanır (Örn: 4-8 thread).
-5. **Hesap Doğrulama:** Başlangıçta Immich `/api/users/me` endpoint'ine bağlanarak ad, e-posta ve sunucu bilgilerini listeler, aktarım için kullanıcı onayı ister.
-6. **Akıllı Google Takeout JSON Eşleştirme:**
-   - Standart `foto.jpg.json` ve `foto.json` biçimlerini tanır.
-   - Google Takeout'un kopya dosyalarındaki `foto(1).jpg` $\rightarrow$ `foto.jpg(1).json` eşleştirmelerini çözer.
-   - 46-51 karakterden sonra kırpılan uzun dosya adı JSON'larını otomatik yakalar.
-   - `photoTakenTime.timestamp` değerini milisaniyelik UTC ISO-8601 tarihine dönüştürür.
-7. **Gerçek Zamanlı Terminal Paneli (Rich):**
-   - **% İlerleme Çubuğu**
-   - **Birleşik Anlık Transfer Hızı (MB/s)** (Tüm paralel iş parçacıklarının toplam bant genişliğini canlı hesaplar)
-   - **Kalan Tahmini Süre (ETA)**
-   - **GB ve Dosya Sayaçları** (`12.450 / 35.000` dosya, `51.2 / 120.5 GB`)
-8. **Thread-Safe Kesinti Koruması (Resume / Checkpoint):**
-   - Yerel `checkpoint.db` (SQLite) sayesinde tekrar çalıştırıldığında yüklenmiş dosyaları anında atlar ve kaldığı yerden devam eder.
-9. **Duplicate Yönetimi:**
-   - Immich sunucusunda zaten var olan dosyalar çökme yaratmaz; `SKIPPED_DUPLICATE` olarak işaretlenir.
-10. **Güvenlik:**
-   - API anahtarları ve özel adresler `.env` dosyasında tutulur, git deposuna asla commit edilmez.
+Terminal komutlarıyla veya karmaşık `.env` ayarlarıyla uğraşmak istemeyenler için **tek komutla** ayağa kalkar ve tarayıcınızda şık bir kontrol paneli sunar.
 
 ---
 
-## Kurulum
+## 🌟 Öne Çıkan Özellikler
 
-### 1. Depoyu Klonlayın veya İlgili Dizine Geçin
+- 🌐 **Modern Web Arayüzü (Dashboard):** Terminalle uğraşmadan tarayıcınız üzerinden tüm süreci yönetin.
+- 🐳 **Docker & Docker Compose ile Tek Tıkla Kurulum:** Hiçbir bağımlılık (Python, Node.js vb.) kurmanıza gerek kalmadan doğrudan Docker ile çalışır.
+- ⚡ **Eşzamanlı (Paralel) Yükleme:** Ayarlanabilir thread/worker havuzu ile (1-10 paralel akış) ev ağınızın ve diskinizin maksimum hızına ulaşır.
+- 📊 **Gerçek Zamanlı Metrikler:**
+  - Canlı yüzde göstergesi (`%`)
+  - Anlık transfer hızı (`MB/s`)
+  - Kalan tahmini süre (`ETA`)
+  - Başarılı, atlanan (duplicate) ve hatalı dosya sayaçları
+  - O anda hangi iş parçacığının hangi dosyayı yüklediğini gösteren canlı worker paneli
+- 🧠 **Akıllı Google Takeout Eşleştirici:**
+  - `foto.jpg.json` ve `foto.json` formatlarını otomatik tanır.
+  - Takeout'un kopya dosyalarındaki `foto(1).jpg` $\leftrightarrow$ `foto.jpg(1).json` garipliklerini çözer.
+  - 46-51 karakterden sonra kırpılan uzun dosya isimli JSON'ları yakalar.
+  - `photoTakenTime.timestamp` değerini milisaniyelik UTC ISO-8601 tarihine çevirerek Immich'e aktarır.
+- 💾 **Elektrik / Kapanma Korumalı Checkpoint (fsync):**
+  - Bilgisayar aniden kapansa dahi aktarılan her dosya `fsync` güvencesiyle diske yazılır. Yeniden başlatıldığında kaldığı yerden anında devam eder.
+- 📜 **Canlı Konsol ve Log İndirme:** Web arayüzünde canlı kayan terminal penceresi ve tek tıkla `transfer.log` dosyasını indirebilme imkanı.
+
+---
+
+## 🚀 Hızlı Başlangıç (Docker ile)
+
+### 1. Depoyu İndirin
 ```bash
+git clone https://github.com/your-username/immich-transfer.git
 cd immich-transfer
 ```
 
-### 2. Python Sanal Ortamını (venv) Oluşturun ve Aktive Edin
+### 2. `docker-compose.yml` Dosyasını Düzenleyin
+`docker-compose.yml` dosyasındaki Takeout klasör yolunuzu kendi bilgisayarınızdaki yolla güncelleyin:
+
+```yaml
+services:
+  immich-transfer:
+    build: .
+    container_name: immich-transfer
+    ports:
+      - "3000:3000"
+    volumes:
+      # Kendi Google Takeout klasörünüzün yolunu yazın (Salt Okunur / Read-Only):
+      - /Users/onur/Downloads/Google Photos:/takeout:ro
+      # Checkpoint ve logların bilgisayarınızda kalıcı olması için:
+      - ./data:/data
+    restart: unless-stopped
+```
+
+### 3. Çalıştırın
+```bash
+docker compose up -d
+```
+
+Tarayıcınızdan **`http://localhost:3000`** adresine gidin ve aktarımı başlatın!
+
+---
+
+## 💻 Docker Olmadan Çalıştırma (Node.js)
+
+Eğer Docker kullanmak istemiyorsanız yerel Node.js ile de çalıştırabilirsiniz:
+
+```bash
+# 1. Bağımlılıkları yükleyin
+npm install
+
+# 2. Sunucuyu başlatın
+npm start
+```
+Tarayıcınızda `http://localhost:3000` adresini açarak kullanabilirsiniz.
+
+---
+
+## 🐍 Alternatif: Python CLI Sürümü
+
+Web arayüzü yerine doğrudan terminalde CLI aracı olarak çalıştırmak isterseniz projede yer alan `transfer.py` betiğini de kullanabilirsiniz:
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-```
-
-### 3. Bağımlılıkları Yükleyin
-```bash
 pip install -r requirements.txt
-```
-
-### 4. Yapılandırma (.env) Dosyasını Oluşturun
-`.env.example` dosyasını kopyalayın:
-```bash
-cp .env.example .env
-```
-
-`.env` dosyasını düzenleyin:
-```ini
-# Immich Sunucu Adresi (Örn: http://192.168.1.100:2283 veya https://immich.evim.local)
-IMMICH_INSTANCE_URL=http://your-immich-ip:2283
-
-# Immich Web Arayüzü -> Account Settings -> API Keys kısmından aldığınız anahtar
-IMMICH_API_KEY=your_api_key_here
-
-# Google Takeout arşivinizin klasör yolu
-TAKEOUT_DIR=/Users/onur/Downloads/Google Photos
+cp .env.example .env   # .env dosyasını doldurun
+python3 transfer.py
 ```
 
 ---
 
-## Çalıştırma
+## 🔒 Güvenlik
 
-```bash
-python3 transfer.py
-```
+- API anahtarları veya kişisel sunucu bilgileri hiçbir zaman koda gömülmez.
+- `.gitignore` ve `.dockerignore` dosyaları yerel `.env`, `.log` ve `data/` klasörlerinin git reposuna sızmasını engeller.
 
-### Çalışma Aşamaları:
-1. Immich sunucusuna bağlanır, bağlı kullanıcı hesabını gösterir ve onayınızı alır.
-2. Klasörü tarar, toplam medya adedini, GB boyutunu ve varsa daha önce yüklenenleri hesaplayıp özetler.
-3. Onayınızla birlikte transferi başlatır; terminalde anlık hız, yüzde ve kalan süreyi gösterir.
-4. Olası hataları `failed_uploads.log` dosyasına yazar.
+## 📄 Lisans
+MIT License. Dilediğiniz gibi kullanabilir, özelleştirebilir ve paylaşabilirsiniz.

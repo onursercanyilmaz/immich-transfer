@@ -1,0 +1,21 @@
+services:
+  immich-transfer:
+    build: .
+    image: immich-transfer:latest
+    container_name: immich-transfer
+    ports:
+      - "3000:3000"
+    volumes:
+      # Google Takeout klasörünüzü buraya bağlayın (Salt Okunur / Read-Only)
+      - /path/to/Google Photos:/takeout:ro
+      # Checkpoint ve logların kalıcı olması için yerel veri klasörü
+      - ./data:/data
+    environment:
+      - PORT=3000
+      - DATA_DIR=/data
+      - TAKEOUT_DIR=/takeout
+      # İsteğe bağlı önceden tanımlı ayarlar (Web UI üzerinden de girilebilir):
+      # - IMMICH_INSTANCE_URL=http://192.168.1.100:2283
+      # - IMMICH_API_KEY=your_api_key_here
+      # - CONCURRENCY=4
+    restart: unless-stopped

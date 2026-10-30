@@ -1,0 +1,13 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+data
+checkpoint.db
+checkpoint.jsonl
+transfer.log
+failed_uploads.log
+.DS_Store
+.venv
+__pycache__

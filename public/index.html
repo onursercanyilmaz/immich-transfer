@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Immich Google Takeout Migrator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#4258ff',
+              600: '#3342e6',
+              700: '#262ec2'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom scrollbar for log viewer */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #18181b; }
+    ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen flex flex-col font-sans antialiased">
+
+  <!-- Top Navigation Header -->
+  <header class="border-b border-zinc-800 bg-zinc-900/60 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-400 flex items-center justify-center font-bold text-white shadow-lg shadow-brand-500/20">
+          IT
+        </div>
+        <div>
+          <h1 class="text-base font-semibold leading-none">Immich Takeout Migrator</h1>
+          <p class="text-xs text-zinc-400 mt-1">Google Photos & Takeout Web Aktarım Aracı</p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-3">
+        <span id="statusBadge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
+          <span class="w-2 h-2 rounded-full bg-zinc-500"></span>
+          Bağlantı Bekleniyor
+        </span>
+        <a href="/api/logs/download" class="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-lg border border-zinc-700 transition flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          Log İndir
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Dashboard -->
+  <main class="max-w-7xl mx-auto px-4 py-8 flex-1 w-full space-y-6">
+
+    <!-- Metrics Cards Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <!-- 1. Progress -->
+      <div class="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl relative overflow-hidden">
+        <div class="text-xs font-medium text-zinc-400 uppercase tracking-wider">İlerleme</div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="metricPercent" class="text-3xl font-extrabold text-white">%0</span>
+          <span id="metricFileCount" class="text-xs text-zinc-500">0 / 0 dosya</span>
+        </div>
+        <div class="w-full bg-zinc-800 h-2 rounded-full mt-3 overflow-hidden">
+          <div id="metricProgressBar" class="bg-brand-500 h-full w-0 transition-all duration-300"></div>
+        </div>
+      </div>
+
+      <!-- 2. Speed & ETA -->
+      <div class="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl">
+        <div class="text-xs font-medium text-zinc-400 uppercase tracking-wider">Hız ve Kalan Süre</div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="metricSpeed" class="text-3xl font-extrabold text-indigo-400">0.0 MB/s</span>
+        </div>
+        <div class="text-xs text-zinc-400 mt-2 flex items-center gap-1">
+          <span>Kalan Süre (ETA):</span>
+          <span id="metricEta" class="font-semibold text-zinc-200">--:--:--</span>
+        </div>
+      </div>
+
+      <!-- 3. Transferred Size -->
+      <div class="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl">
+        <div class="text-xs font-medium text-zinc-400 uppercase tracking-wider">Aktarılan Veri</div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="metricUploadedGb" class="text-3xl font-extrabold text-emerald-400">0.0 GB</span>
+          <span id="metricTotalGb" class="text-xs text-zinc-500">/ 0.0 GB</span>
+        </div>
+        <div class="text-xs text-zinc-400 mt-2">
+          Disk I/O ve Stream Aktarım
+        </div>
+      </div>
+
+      <!-- 4. Result Breakdown -->
+      <div class="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl">
+        <div class="text-xs font-medium text-zinc-400 uppercase tracking-wider">Sonuç Dağılımı</div>
+        <div class="mt-3 grid grid-cols-3 gap-2 text-center">
+          <div class="bg-emerald-950/40 border border-emerald-800/40 p-2 rounded-lg">
+            <div id="metricSuccess" class="text-lg font-bold text-emerald-400">0</div>
+            <div class="text-[10px] text-zinc-400">Başarılı</div>
+          </div>
+          <div class="bg-blue-950/40 border border-blue-800/40 p-2 rounded-lg">
+            <div id="metricDuplicate" class="text-lg font-bold text-blue-400">0</div>
+            <div class="text-[10px] text-zinc-400">Zaten Var</div>
+          </div>
+          <div class="bg-rose-950/40 border border-rose-800/40 p-2 rounded-lg">
+            <div id="metricError" class="text-lg font-bold text-rose-400">0</div>
+            <div class="text-[10px] text-zinc-400">Hatalı</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Workspace: Left Controls, Right Log Viewer -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Left Column: Setup & Actions (5 cols) -->
+      <div class="lg:col-span-5 space-y-6">
+
+        <!-- Card 1: Configuration Form -->
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
+            <span class="w-5 h-5 rounded-full bg-zinc-800 text-zinc-300 inline-flex items-center justify-center text-xs">1</span>
+            Immich ve Arşiv Ayarları
+          </h2>
+
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-zinc-400 mb-1">Immich Sunucu URL</label>
+              <input id="inputImmichUrl" type="text" placeholder="http://192.168.1.100:2283"
+                class="w-full bg-zinc-950 border border-zinc-800 focus:border-brand-500 rounded-xl px-3.5 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition">
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-zinc-400 mb-1">Immich API Anahtarı (API Key)</label>
+              <input id="inputApiKey" type="password" placeholder="API Key giriniz..."
+                class="w-full bg-zinc-950 border border-zinc-800 focus:border-brand-500 rounded-xl px-3.5 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition">
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-zinc-400 mb-1">Google Takeout Klasörü</label>
+              <input id="inputTakeoutDir" type="text" placeholder="/takeout"
+                class="w-full bg-zinc-950 border border-zinc-800 focus:border-brand-500 rounded-xl px-3.5 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition">
+              <p class="text-[11px] text-zinc-500 mt-1">Docker içinde varsayılan: <code class="text-zinc-400">/takeout</code></p>
+            </div>
+
+            <div>
+              <div class="flex justify-between items-center text-xs font-medium text-zinc-400 mb-1">
+                <span>Eşzamanlı Yükleme (Concurrency)</span>
+                <span id="concurrencyValue" class="text-brand-400 font-bold">4 Thread</span>
+              </div>
+              <input id="inputConcurrency" type="range" min="1" max="10" value="4"
+                class="w-full accent-brand-500 cursor-pointer">
+            </div>
+          </div>
+
+          <!-- Test Button & Account Verified Box -->
+          <div class="pt-2">
+            <button id="btnTestConn" onclick="testConnection()"
+              class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm font-medium py-2.5 rounded-xl border border-zinc-700 transition flex items-center justify-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              Bağlantıyı ve Hesabı Doğrula
+            </button>
+
+            <!-- Verified Card (Hidden initially) -->
+            <div id="verifiedUserCard" class="hidden mt-3 p-3.5 bg-emerald-950/30 border border-emerald-800/40 rounded-xl flex items-center space-x-3">
+              <div class="w-9 h-9 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-sm">
+                ✓
+              </div>
+              <div class="overflow-hidden">
+                <div id="verifiedUserName" class="text-sm font-semibold text-emerald-300 truncate">Onur</div>
+                <div id="verifiedUserEmail" class="text-xs text-emerald-400/80 truncate">onur@example.com</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2: Scan & Transfer Action -->
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
+            <span class="w-5 h-5 rounded-full bg-zinc-800 text-zinc-300 inline-flex items-center justify-center text-xs">2</span>
+            Tarama ve Aktarım Kontrolü
+          </h2>
+
+          <button id="btnScan" onclick="startScan()"
+            class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium py-2.5 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            Takeout Klasörünü Tara
+          </button>
+
+          <!-- Scan Results Summary -->
+          <div id="scanResultBox" class="hidden p-3.5 bg-zinc-950 border border-zinc-800 rounded-xl space-y-2 text-xs">
+            <div class="flex justify-between text-zinc-400">
+              <span>Toplam Bulunan Medya:</span>
+              <span id="scanTotalFound" class="font-bold text-zinc-200">0 dosya</span>
+            </div>
+            <div class="flex justify-between text-zinc-400">
+              <span>Önceden Aktarılan (Checkpoint):</span>
+              <span id="scanAlreadyUploaded" class="font-bold text-emerald-400">0 dosya</span>
+            </div>
+            <div class="flex justify-between text-zinc-400">
+              <span>Yeni Yüklenecek:</span>
+              <span id="scanPending" class="font-bold text-amber-400">0 dosya</span>
+            </div>
+            <div class="flex justify-between text-zinc-400 border-t border-zinc-800 pt-2">
+              <span>Aktarılacak Toplam Boyut:</span>
+              <span id="scanPendingGb" class="font-bold text-indigo-400">0.00 GB</span>
+            </div>
+          </div>
+
+          <!-- Transfer Controls -->
+          <div class="space-y-2 pt-2">
+            <button id="btnStartTransfer" onclick="startTransfer()" disabled
+              class="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              Aktarımı Başlat
+            </button>
+
+            <div class="grid grid-cols-2 gap-2">
+              <button id="btnPauseResume" onclick="togglePause()" disabled
+                class="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-xs font-medium py-2 rounded-lg border border-zinc-700 transition">
+                Duraklat
+              </button>
+              <button id="btnStop" onclick="stopTransfer()" disabled
+                class="bg-zinc-800 hover:bg-rose-950/40 text-rose-400 disabled:opacity-40 text-xs font-medium py-2 rounded-lg border border-zinc-700 hover:border-rose-800/40 transition">
+                Durdur
+              </button>
+            </div>
+          </div>
+
+          <!-- Active Uploading Workers List -->
+          <div id="workersBox" class="hidden pt-2 border-t border-zinc-800">
+            <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Şu Anda Yüklenenler:</div>
+            <div id="workersList" class="space-y-1 text-xs font-mono text-zinc-400"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right Column: Live Terminal Log Console (7 cols) -->
+      <div class="lg:col-span-7 flex flex-col bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden min-h-[550px]">
+        <div class="bg-zinc-950 px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <span class="w-3 h-3 rounded-full bg-rose-500/80 inline-block"></span>
+            <span class="w-3 h-3 rounded-full bg-amber-500/80 inline-block"></span>
+            <span class="w-3 h-3 rounded-full bg-emerald-500/80 inline-block"></span>
+            <span class="text-xs font-mono text-zinc-400 ml-2">Canlı Konsol (transfer.log)</span>
+          </div>
+          <div class="flex items-center space-x-2">
+            <label class="text-[11px] text-zinc-500 flex items-center gap-1 cursor-pointer">
+              <input type="checkbox" id="autoScrollCheck" checked class="rounded bg-zinc-800 border-zinc-700 text-brand-500">
+              Otomatik Kaydır
+            </label>
+            <button onclick="clearConsole()" class="text-[11px] text-zinc-400 hover:text-zinc-200 px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">
+              Temizle
+            </button>
+          </div>
+        </div>
+
+        <!-- Log Content Window -->
+        <div id="consoleWindow" class="p-4 flex-1 overflow-y-auto font-mono text-xs space-y-1.5 select-text bg-[#0c0d0e]">
+          <div class="text-zinc-600">// Immich Takeout Migrator hazır. Bağlantınızı test edip taramayı başlatınız.</div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="border-t border-zinc-800/80 py-4 text-center text-xs text-zinc-600">
+    Immich Google Takeout Migrator • Dockerized Web Edition • Güvenli, Dayanıklı ve Açık Kaynak
+  </footer>
+
+  <!-- Application Logic -->
+  <script>
+    let currentState = 'IDLE';
+    let isPaused = false;
+
+    // Concurrency slider sync
+    const concurrencySlider = document.getElementById('inputConcurrency');
+    const concurrencyVal = document.getElementById('concurrencyValue');
+    concurrencySlider.addEventListener('input', (e) => {
+      concurrencyVal.textContent = `${e.target.value} Thread`;
+    });
+
+    // Helper: format bytes to GB / MB
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return '0.00 GB';
+      const gb = bytes / (1024 ** 3);
+      if (gb >= 1) return gb.toFixed(2) + ' GB';
+      return (bytes / (1024 ** 2)).toFixed(1) + ' MB';
+    }
+
+    // Helper: format seconds to HH:MM:SS
+    function formatTime(seconds) {
+      if (!seconds || seconds <= 0 || !isFinite(seconds)) return '--:--:--';
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
+    }
+
+    // Append log to console window
+    function appendLog(log) {
+      const win = document.getElementById('consoleWindow');
+      const row = document.createElement('div');
+      row.className = 'leading-relaxed break-all';
+
+      let tagColor = 'text-zinc-500';
+      if (log.level === 'SUCCESS') tagColor = 'text-emerald-400 font-semibold';
+      else if (log.level === 'SKIP') tagColor = 'text-blue-400';
+      else if (log.level === 'WARN') tagColor = 'text-amber-400';
+      else if (log.level === 'ERROR' || log.level === 'CRITICAL') tagColor = 'text-rose-400 font-bold';
+
+      row.innerHTML = `<span class="text-zinc-600">[${log.timestamp || ''}]</span> <span class="${tagColor}">[${log.level}]</span> <span class="text-zinc-300">${escapeHtml(log.message)}</span>`;
+      win.appendChild(row);
+
+      if (document.getElementById('autoScrollCheck').checked) {
+        win.scrollTop = win.scrollHeight;
+      }
+    }
+
+    function clearConsole() {
+      document.getElementById('consoleWindow').innerHTML = '';
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Update status badge UI
+    function updateStateBadge(state) {
+      currentState = state;
+      const badge = document.getElementById('statusBadge');
+      const startBtn = document.getElementById('btnStartTransfer');
+      const pauseBtn = document.getElementById('btnPauseResume');
+      const stopBtn = document.getElementById('btnStop');
+
+      if (state === 'IDLE') {
+        badge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-zinc-800 text-zinc-400 border border-zinc-700';
+        badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-zinc-500"></span> Hazır';
+        pauseBtn.disabled = true;
+        stopBtn.disabled = true;
+      } else if (state === 'SCANNING') {
+        badge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-indigo-950 text-indigo-300 border border-indigo-700';
+        badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span> Taranıyor...';
+      } else if (state === 'READY') {
+        badge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-950 text-amber-300 border border-amber-700';
+        badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-500"></span> Aktarıma Hazır';
+        startBtn.disabled = false;
+      } else if (state === 'RUNNING') {
+        badge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-950 text-emerald-300 border border-emerald-700';
+        badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Aktarılıyor...';
+        startBtn.disabled = true;
+        pauseBtn.disabled = false;
+        pauseBtn.textContent = 'Duraklat';
+        stopBtn.disabled = false;
+        document.getElementById('workersBox').classList.remove('hidden');
+      } else if (state === 'PAUSED') {
+        badge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-950 text-amber-300 border border-amber-700';
+        badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400"></span> Duraklatıldı';
+        pauseBtn.textContent = 'Devam Et';
+      } else if (state === 'COMPLETED') {
+        badge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-900 text-emerald-200 border border-emerald-600';
+        badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span> Tamamlandı!';
+        startBtn.disabled = false;
+        pauseBtn.disabled = true;
+        stopBtn.disabled = true;
+        document.getElementById('workersBox').classList.add('hidden');
+      } else if (state === 'STOPPED') {
+        badge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-rose-950 text-rose-300 border border-rose-700';
+        badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-500"></span> Durduruldu';
+        startBtn.disabled = false;
+        pauseBtn.disabled = true;
+        stopBtn.disabled = true;
+        document.getElementById('workersBox').classList.add('hidden');
+      }
+    }
+
+    // Update stats metrics
+    function updateMetrics(stats) {
+      if (!stats) return;
+
+      const pct = stats.percentage || 0;
+      document.getElementById('metricPercent').textContent = `%${pct}`;
+      document.getElementById('metricProgressBar').style.width = `${pct}%`;
+      document.getElementById('metricFileCount').textContent = `${(stats.processedFiles || 0).toLocaleString()} / ${(stats.pendingFiles || 0).toLocaleString()} dosya`;
+
+      const speedMb = ((stats.speedBytesPerSec || 0) / (1024 * 1024)).toFixed(1);
+      document.getElementById('metricSpeed').textContent = `${speedMb} MB/s`;
+      document.getElementById('metricEta').textContent = formatTime(stats.etaSeconds);
+
+      document.getElementById('metricUploadedGb').textContent = formatBytes(stats.uploadedBytes);
+      document.getElementById('metricTotalGb').textContent = `/ ${formatBytes(stats.totalBytes)}`;
+
+      document.getElementById('metricSuccess').textContent = (stats.successCount || 0).toLocaleString();
+      document.getElementById('metricDuplicate').textContent = (stats.duplicateCount || 0).toLocaleString();
+      document.getElementById('metricError').textContent = (stats.errorCount || 0).toLocaleString();
+    }
+
+    // API Calls
+    async function testConnection() {
+      const immichUrl = document.getElementById('inputImmichUrl').value.trim();
+      const apiKey = document.getElementById('inputApiKey').value.trim();
+
+      if (!immichUrl || !apiKey) {
+        alert('Lütfen Immich URL ve API Key giriniz.');
+        return;
+      }
+
+      const btn = document.getElementById('btnTestConn');
+      btn.disabled = true;
+      btn.textContent = 'Doğrulanıyor...';
+
+      try {
+        const res = await fetch('/api/test-connection', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ immichUrl, apiKey })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          const card = document.getElementById('verifiedUserCard');
+          card.classList.remove('hidden');
+          document.getElementById('verifiedUserName').textContent = data.user.name || 'İsimsiz Kullanıcı';
+          document.getElementById('verifiedUserEmail').textContent = data.user.email || 'Email yok';
+          appendLog({ timestamp: new Date().toLocaleTimeString(), level: 'SUCCESS', message: `Hesap doğrulandı: ${data.user.name} (${data.user.email})` });
+        } else {
+          alert('Hata: ' + data.error);
+          appendLog({ timestamp: new Date().toLocaleTimeString(), level: 'ERROR', message: `Doğrulama hatası: ${data.error}` });
+        }
+      } catch (err) {
+        alert('Sunucuya bağlanılamadı: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Bağlantıyı ve Hesabı Doğrula`;
+      }
+    }
+
+    async function startScan() {
+      const takeoutDir = document.getElementById('inputTakeoutDir').value.trim();
+      const btn = document.getElementById('btnScan');
+      btn.disabled = true;
+      btn.textContent = 'Taranıyor...';
+
+      try {
+        const res = await fetch('/api/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ takeoutDir })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          const box = document.getElementById('scanResultBox');
+          box.classList.remove('hidden');
+          document.getElementById('scanTotalFound').textContent = `${data.stats.totalFiles.toLocaleString()} dosya`;
+          document.getElementById('scanAlreadyUploaded').textContent = `${data.stats.alreadyUploaded.toLocaleString()} dosya`;
+          document.getElementById('scanPending').textContent = `${data.stats.pendingFiles.toLocaleString()} dosya`;
+          document.getElementById('scanPendingGb').textContent = formatBytes(data.stats.totalBytes);
+
+          updateMetrics(data.stats);
+          updateStateBadge('READY');
+        } else {
+          alert('Tarama Hatası: ' + data.error);
+        }
+      } catch (err) {
+        alert('Tarama yapılamadı: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg> Takeout Klasörünü Tara`;
+      }
+    }
+
+    async function startTransfer() {
+      const immichUrl = document.getElementById('inputImmichUrl').value.trim();
+      const apiKey = document.getElementById('inputApiKey').value.trim();
+      const takeoutDir = document.getElementById('inputTakeoutDir').value.trim();
+      const concurrency = document.getElementById('inputConcurrency').value;
+
+      if (!immichUrl || !apiKey) {
+        alert('Lütfen Immich URL ve API Key giriniz.');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ immichUrl, apiKey, takeoutDir, concurrency })
+        });
+        const data = await res.json();
+        if (data.success) {
+          updateStateBadge('RUNNING');
+        } else {
+          alert('Hata: ' + data.error);
+        }
+      } catch (err) {
+        alert('Aktarım başlatılamadı: ' + err.message);
+      }
+    }
+
+    async function togglePause() {
+      if (currentState === 'RUNNING') {
+        await fetch('/api/pause', { method: 'POST' });
+        updateStateBadge('PAUSED');
+      } else if (currentState === 'PAUSED') {
+        await fetch('/api/resume', { method: 'POST' });
+        updateStateBadge('RUNNING');
+      }
+    }
+
+    async function stopTransfer() {
+      if (confirm('Aktarımı durdurmak istediğinize emin misiniz? (İstediğiniz zaman kaldığı yerden devam ettirebilirsiniz)')) {
+        await fetch('/api/stop', { method: 'POST' });
+        updateStateBadge('STOPPED');
+      }
+    }
+
+    // Connect to Server-Sent Events (SSE) stream
+    function initSSE() {
+      const eventSource = new EventSource('/api/events');
+
+      eventSource.addEventListener('init', (e) => {
+        const data = JSON.parse(e.data);
+        if (data.defaultTakeout) {
+          document.getElementById('inputTakeoutDir').value = data.defaultTakeout;
+        }
+        if (data.envUrl) {
+          document.getElementById('inputImmichUrl').value = data.envUrl;
+        }
+        if (data.envKey) {
+          document.getElementById('inputApiKey').value = data.envKey;
+        }
+        if (data.logs) {
+          data.logs.forEach(appendLog);
+        }
+        if (data.stats) {
+          updateMetrics(data.stats);
+        }
+        if (data.state) {
+          updateStateBadge(data.state);
+        }
+      });
+
+      eventSource.addEventListener('log', (e) => {
+        appendLog(JSON.parse(e.data));
+      });
+
+      eventSource.addEventListener('progress', (e) => {
+        updateMetrics(JSON.parse(e.data));
+      });
+
+      eventSource.addEventListener('status', (e) => {
+        const data = JSON.parse(e.data);
+        updateStateBadge(data.state);
+        if (data.stats) updateMetrics(data.stats);
+      });
+
+      eventSource.addEventListener('workers', (e) => {
+        const list = JSON.parse(e.data);
+        const container = document.getElementById('workersList');
+        container.innerHTML = '';
+        list.forEach(name => {
+          const item = document.createElement('div');
+          item.className = 'truncate flex items-center gap-1.5 text-zinc-300';
+          item.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-brand-400"></span> ${escapeHtml(name)}`;
+          container.appendChild(item);
+        });
+      });
+
+      eventSource.onerror = () => {
+        // SSE yeniden bağlanır
+      };
+    }
+
+    window.addEventListener('DOMContentLoaded', initSSE);
+  </script>
+</body>
+</html>
