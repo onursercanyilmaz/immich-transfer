@@ -567,7 +567,8 @@
       }
     };
 
-    let currentLang = localStorage.getItem('immich_transfer_lang') || 'tr';
+    const urlParams = new URLSearchParams(window.location.search);
+    let currentLang = urlParams.get('lang') || localStorage.getItem('immich_transfer_lang') || 'tr';
     let currentState = 'IDLE';
     let isPaused = false;
     let latestStats = null;
@@ -1090,6 +1091,61 @@
       });
     }
 
+    function loadDemoMode() {
+      document.getElementById('inputImmichUrl').value = 'http://192.168.1.100:2283';
+      document.getElementById('inputApiKey').value = '••••••••••••••••••••••••';
+      document.getElementById('inputTakeoutDir').value = '/media/archive/GoogleTakeout';
+      document.getElementById('inputConcurrency').value = 4;
+      document.getElementById('concurrencyValue').textContent = `4 ${I18N[currentLang].workerUnit}`;
+
+      const card = document.getElementById('verifiedUserCard');
+      card.classList.remove('hidden');
+      document.getElementById('verifiedUserName').textContent = 'Alex Rivera';
+      document.getElementById('verifiedUserEmail').textContent = 'alex.rivera@example.com';
+
+      const demoStats = {
+        totalFiles: 24930,
+        extractedCount: 14210,
+        zipCount: 10720,
+        livePhotoCount: 3840,
+        alreadyUploaded: 0,
+        pendingFiles: 24930,
+        processedFiles: 18450,
+        percentage: 74,
+        speedBytesPerSec: 54945382, // ~52.4 MB/s
+        etaSeconds: 525, // 00:08:45
+        uploadedBytes: 90835492864, // ~84.6 GB
+        totalBytes: 122622771200, // ~114.2 GB
+        successCount: 18120,
+        duplicateCount: 328,
+        errorCount: 2
+      };
+
+      updateMetrics(demoStats);
+      updateStateBadge('RUNNING');
+
+      renderWorkers([
+        'IMG_4821.HEIC + IMG_4821.MOV (Live Photo)',
+        'Vacation-2023/Beach-Sunset-4K.mp4',
+        'takeout-part-2.zip#Google Photos/2022/DSC_9024.JPG',
+        'Photos/Family/Christmas-Dinner.heic'
+      ]);
+
+      clearConsole();
+      const logs = [
+        { timestamp: '14:20:01', level: 'INFO', message: 'Connected to Immich instance: Alex Rivera (alex.rivera@example.com)' },
+        { timestamp: '14:20:03', level: 'INFO', message: 'Scanning archive: /media/archive/GoogleTakeout (Extracted: ON, ZIP: ON, Live Photos: ON)' },
+        { timestamp: '14:20:05', level: 'INFO', message: 'Scan complete: 24,930 media items found (14,210 extracted, 10,720 in ZIP, 3,840 Live Photos).' },
+        { timestamp: '14:20:06', level: 'INFO', message: 'Transfer pool started with 4 parallel worker threads.' },
+        { timestamp: '14:21:12', level: 'SUCCESS', message: 'Uploaded Live Photo: IMG_4819.HEIC + IMG_4819.MOV [Pair bound]' },
+        { timestamp: '14:22:04', level: 'SUCCESS', message: 'Streamed from ZIP: takeout-part-1.zip#Summer/IMG_2041.JPG (2.4 MB)' },
+        { timestamp: '14:22:50', level: 'SKIP', message: 'Skipped server duplicate: 2021-09-02_pic.jpg (409 Conflict)' },
+        { timestamp: '14:23:18', level: 'SUCCESS', message: 'Streamed from ZIP: takeout-part-2.zip#2022/Video_Family.mp4 (48.1 MB)' },
+        { timestamp: '14:23:45', level: 'INFO', message: 'Physical fsync checkpoint flushed to disk (18,450 records verified).' }
+      ];
+      logs.forEach(appendLog);
+    }
+
     document.getElementById('inputImmichUrl').addEventListener('input', (e) => {
       localStorage.setItem('immich_url', e.target.value.trim());
     });
@@ -1099,7 +1155,11 @@
 
     window.addEventListener('DOMContentLoaded', () => {
       setLanguage(currentLang);
-      initSSE();
+      if (urlParams.get('demo') === '1') {
+        loadDemoMode();
+      } else {
+        initSSE();
+      }
     });
   </script>
 </body>

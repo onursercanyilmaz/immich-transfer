@@ -15,13 +15,17 @@
 
   <br />
 
+  <img src="assets/dashboard.png" alt="Immich Transfer Web Dashboard Preview" width="940" style="border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.4);" />
+
+  <br />
+
   [Features](#-key-features) •
   [Architecture](#-architecture) •
   [Quick Start](#-quick-start) •
-  [Web Interface](#-web-interface) •
+  [Web Interface](#-web-interface-walkthrough) •
   [Takeout Parsing](#-how-takeout-sidecars-are-handled) •
   [Testing](#-testing) •
-  [Türkçe Açıklama](#-t%C3%BCrk%C3%A7e)
+  [Türkçe Açıklama](#-t%C3%BCrk%C3%A7e-a%C3%A7%C4%B1klama)
 
 </div>
 
@@ -160,11 +164,16 @@ python3 transfer.py
 
 ## 🖥️ Web Interface Walkthrough
 
-1. **Account Verification:** Enter your Immich Server URL and API Key, then click **"Verify Connection & Account"**. It queries `/api/users/me` and displays a confirmed green badge with the target user's avatar, name, and email.
-2. **Directory Selection:** Either type the path or click the yellow **"Browse"** button to open the interactive directory explorer modal.
-3. **One-Click Scan:** Click **"Scan Takeout Folder"**. The app calculates total media files, already migrated assets, new files, and total volume in gigabytes.
-4. **Start & Monitor:** Hit **"Start Migration"**. Watch real-time upload speed (`MB/s`), remaining time (`ETA`), percentage bars, and live worker threads as they stream data.
-5. **Pause & Resume Anytime:** Safely pause, stop, or reboot your system. The tool never re-uploads files already confirmed by the checkpoint.
+<p align="center">
+  <img src="assets/dashboard.png" alt="Immich Transfer Active Migration Dashboard" width="100%" style="border-radius: 12px; border: 1px solid #27272a;" />
+</p>
+
+1. **Account Verification:** Enter your Immich Server URL and API Key, then click **"Verify Connection & Account"**. It queries `/api/users/me` and displays a verified badge with the user's name and email.
+2. **Directory Selection:** Either type the path or click the **"Browse"** button to open the interactive directory explorer modal.
+3. **Scan & Pairing Options:** Toggle whether to scan loose **Extracted Folders & Files**, stream directly from **ZIP Archives**, and pair **Live / Motion Photos**.
+4. **Scan & Real-Time Breakdown:** Click **"Scan Media Folder"**. The dashboard categorizes files into Extracted vs. In ZIP vs. Live Photo pairs, previously uploaded files, and total data volume.
+5. **Start & Monitor:** Hit **"Start Migration"**. Watch real-time upload speed (`MB/s`), remaining time (`ETA`), percentage bars, and active parallel worker threads.
+6. **Crash-Proof Resume:** Safely pause, stop, or reboot. The tool's `fsync` persistence ensures zero duplicate re-uploads upon resumption.
 
 ---
 
