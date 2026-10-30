@@ -2,18 +2,19 @@
 # -*- coding: utf-8 -*-
 
 """
-Immich Google Takeout Transfer Tool
-----------------------------------
+Immich Google Takeout Transfer Tool (Parallel Multi-Thread Edition)
+-------------------------------------------------------------------
 Google Takeout arşivlerini (fotoğraf/video ve .json yan dosyalarını)
-self-hosted Immich sunucunuza güvenle, yüksek doğrulukla ve kaldığı
-yerden devam edebilir şekilde aktaran Python betiği.
+self-hosted Immich sunucunuza paralel çoklu iş parçacığı (multi-threading)
+kullanarak maksimum ağ hızıyla aktaran Python betiği.
 
 Özellikler:
+- Eşzamanlı (Paralel) Yükleme: CONCURRENCY ile ayarlanabilir worker havuzu (Varsayılan: 4-8 thread)
 - Immich API kimlik doğrulama ve kullanıcı teyidi (/api/users/me)
 - Akıllı Google Takeout JSON eşleştirme (.ext.json, kesilmiş isimler, parantezli kopyalar)
 - Çekim tarihi (photoTakenTime -> UTC ISO 8601) ve meta veri aktarımı
-- Kesinti ve elektrik kopmalarına karşı yerel SQLite Checkpoint (Kaldığı yerden devam etme)
-- Rich kütüphanesi ile anlık transfer hızı (MB/s), kalan süre (ETA), GB ve dosya sayaçları
+- Thread-safe yerel SQLite Checkpoint (Kaldığı yerden devam etme garantisi)
+- Rich kütüphanesi ile anlık birleşik transfer hızı (MB/s), kalan süre (ETA) ve sayaçlar
 - Tekrarlı / duplicate dosya yönetimi
 """
 
@@ -25,11 +26,15 @@ import mimetypes
 import hashlib
 import sqlite3
 import unicodedata
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple, List
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
@@ -58,47 +63,52 @@ SUPPORTED_EXTENSIONS = {
 
 
 # ==============================================================================
-# 1. VERİTABANI & CHECKPOINT (Kaldığı Yerden Devam Etme)
+# 1. THREAD-SAFE VERİTABANI & CHECKPOINT (Kaldığı Yerden Devam Etme)
 # ==============================================================================
 class CheckpointDB:
     """
-    120 GB gibi büyük aktarımlarda elektrik/ağ kesintisi olsa dahi
-    kaldığı yerden anında devam edebilmesi için yerel SQLite veritabanı.
+    Paralel iş parçacıklarının aynı anda erişimine uygun,
+    thread-safe yerel SQLite veritabanı yöneticisi.
     """
     def __init__(self, db_path: str = "checkpoint.db"):
         self.db_path = db_path
+        self.lock = threading.Lock()
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._create_table()
 
     def _create_table(self):
-        with self.conn:
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS uploads (
-                    file_path TEXT PRIMARY KEY,
-                    file_size INTEGER,
-                    status TEXT,
-                    immich_id TEXT,
-                    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+        with self.lock:
+            with self.conn:
+                self.conn.execute("""
+                    CREATE TABLE IF NOT EXISTS uploads (
+                        file_path TEXT PRIMARY KEY,
+                        file_size INTEGER,
+                        status TEXT,
+                        immich_id TEXT,
+                        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
 
     def is_uploaded(self, file_path: str) -> bool:
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT status FROM uploads WHERE file_path = ?", (file_path,))
-        row = cursor.fetchone()
-        return row is not None and row[0] in ("SUCCESS", "SKIPPED_DUPLICATE")
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT status FROM uploads WHERE file_path = ?", (file_path,))
+            row = cursor.fetchone()
+            return row is not None and row[0] in ("SUCCESS", "SKIPPED_DUPLICATE")
 
     def record_upload(self, file_path: str, file_size: int, status: str, immich_id: str = ""):
-        with self.conn:
-            self.conn.execute("""
-                INSERT OR REPLACE INTO uploads (file_path, file_size, status, immich_id)
-                VALUES (?, ?, ?, ?)
-            """, (file_path, file_size, status, immich_id))
+        with self.lock:
+            with self.conn:
+                self.conn.execute("""
+                    INSERT OR REPLACE INTO uploads (file_path, file_size, status, immich_id)
+                    VALUES (?, ?, ?, ?)
+                """, (file_path, file_size, status, immich_id))
 
     def get_stats(self) -> Dict[str, int]:
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT status, count(*) FROM uploads GROUP BY status")
-        return dict(cursor.fetchall())
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT status, count(*) FROM uploads GROUP BY status")
+            return dict(cursor.fetchall())
 
 
 # ==============================================================================
@@ -106,8 +116,8 @@ class CheckpointDB:
 # ==============================================================================
 class ProgressFileReader:
     """
-    Requests kütüphanesi multipart dosya yüklerken okunan her byte bloğunu
-    Rich Progress Bar'a bildirerek gerçek zamanlı upload hızı ve ETA üretir.
+    Requests kütüphanesi dosyayı stream ederken okunan her byte bloğunu
+    Rich Progress Bar'a bildirerek birleşik upload hızı (MB/s) üretir.
     """
     def __init__(self, filepath: str, progress_callback):
         self.filepath = filepath
@@ -154,19 +164,11 @@ class TakeoutMetadataParser:
 
     @classmethod
     def find_json_path(cls, media_path: Path) -> Optional[Path]:
-        """
-        Bir medya dosyasının (.jpg vb.) Google Takeout'taki .json eşini bulur.
-        Denenen formatlar:
-        1. filename.ext.json (en standart)
-        2. filename.json
-        3. Kopya parantezleri: file(1).jpg -> file.jpg(1).json veya file(1).jpg.json
-        4. Kırpılmış isimler: Takeout dosya adını bazen 47-51 karakterde keser.
-        """
         parent = media_path.parent
-        name = media_path.name  # örn: IMG_001.JPG
-        stem = media_path.stem  # örn: IMG_001
+        name = media_path.name
+        stem = media_path.stem
 
-        # 1. En yaygın varyasyon: dosya.uzantı.json (örn: IMG_001.JPG.json)
+        # 1. En yaygın format: dosya.uzantı.json (örn: IMG_001.JPG.json)
         candidate1 = parent / f"{name}.json"
         if candidate1.is_file():
             return candidate1
@@ -178,7 +180,6 @@ class TakeoutMetadataParser:
 
         # 3. Parantezli kopyalar: file(1).jpg -> file.jpg(1).json
         if "(" in stem and stem.endswith(")"):
-            # stem: IMG_001(1) -> base: IMG_001, num: (1)
             idx = stem.rfind("(")
             base = stem[:idx]
             suffix = stem[idx:]
@@ -186,8 +187,7 @@ class TakeoutMetadataParser:
             if candidate3.is_file():
                 return candidate3
 
-        # 4. Kırpılmış (truncated) isimler (Takeout genelde ~46-51 karakterde keser)
-        # Eğer dosya adı çok uzunsa ilk 46 karakterini arayalım
+        # 4. Kırpılmış (truncated) isimler (~46-51 karakter limiti)
         if len(name) > 45:
             prefix = name[:46]
             for file in parent.iterdir():
@@ -198,10 +198,6 @@ class TakeoutMetadataParser:
 
     @classmethod
     def parse_metadata(cls, media_path: Path) -> Dict[str, Any]:
-        """
-        JSON dosyasını okuyup Immich'in beklediği tarih, favori ve açıklama
-        değerlerini döner. JSON bulunamazsa dosya mtime'ına fallback yapar.
-        """
         result = {
             "created_at": None,
             "modified_at": None,
@@ -209,7 +205,7 @@ class TakeoutMetadataParser:
             "description": ""
         }
 
-        # Dosyanın disk üzerindeki mtime'ı fallback olarak hazır tutulur
+        # Dosyanın disk mtime'ı fallback
         mtime = datetime.fromtimestamp(media_path.stat().st_mtime, tz=timezone.utc)
         fallback_iso = mtime.strftime("%Y-%m-%dT%H:%M:%S.000Z")
         result["modified_at"] = fallback_iso
@@ -223,41 +219,35 @@ class TakeoutMetadataParser:
             with open(json_path, "r", encoding="utf-8", errors="ignore") as f:
                 data = json.load(f)
 
-            # photoTakenTime.timestamp (Epoch saniye)
             taken_time = data.get("photoTakenTime", {}).get("timestamp")
             if taken_time:
                 ts = int(taken_time)
                 dt = datetime.fromtimestamp(ts, tz=timezone.utc)
                 result["created_at"] = dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
-            # Açıklama
             desc = data.get("description", "")
             if desc:
                 result["description"] = desc
 
-            # Favori
             if data.get("favorited") is True:
                 result["is_favorite"] = True
 
         except Exception:
-            # JSON bozuksa sessizce fallback tarihini korur
             pass
 
         return result
 
 
 # ==============================================================================
-# 4. IMMICH API İSTEMCİSİ
+# 4. IMMICH API İSTEMCİSİ (Paralel Havuz Destekli)
 # ==============================================================================
 class ImmichClient:
     """
-    Immich REST API işlemlerini (Doğrulama, Kullanıcı Bilgisi, Asset Yükleme)
-    yürüten istemci.
+    Immich REST API işlemlerini yürüten ve çoklu thread için
+    bağlantı havuzu genişletilmiş HTTP istemcisi.
     """
-    def __init__(self, base_url: str, api_key: str):
-        # URL sonundaki eğik çizgileri temizle
+    def __init__(self, base_url: str, api_key: str, pool_size: int = 8):
         self.base_url = base_url.rstrip("/")
-        # URL içinde /api yoksa ekle
         if not self.base_url.endswith("/api"):
             self.api_url = f"{self.base_url}/api"
         else:
@@ -270,17 +260,22 @@ class ImmichClient:
             "Accept": "application/json"
         })
 
+        # Çoklu thread istekleri için bağlantı havuzu (connection pool) optimizasyonu
+        adapter = HTTPAdapter(
+            pool_connections=pool_size * 2,
+            pool_maxsize=pool_size * 2,
+            max_retries=Retry(total=3, backoff_factor=1, status_forcelist=[502, 503, 504])
+        )
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+
     def get_current_user(self) -> Dict[str, Any]:
-        """
-        /api/users/me endpoint'ine bağlanarak kimlik doğrulamayı ve
-        kullanıcı bilgilerini kontrol eder.
-        """
         url = f"{self.api_url}/users/me"
         try:
             res = self.session.get(url, timeout=15)
             if res.status_code == 200:
                 return res.json()
-            elif res.status_code == 401 or res.status_code == 403:
+            elif res.status_code in (401, 403):
                 raise PermissionError("API Anahtarı geçersiz veya yetersiz yetkiye sahip!")
             else:
                 raise ConnectionError(f"Immich sunucusu beklenmeyen yanıt döndü: {res.status_code} - {res.text}")
@@ -293,14 +288,8 @@ class ImmichClient:
         meta: Dict[str, Any],
         progress_callback=None
     ) -> Tuple[bool, str, str]:
-        """
-        Medya dosyasını ve meta verilerini /api/assets endpoint'ine multipart/form-data
-        olarak yükler.
-        Döner: (Başarılı mı, Durum/Mesaj, Immich Asset ID)
-        """
         url = f"{self.api_url}/assets"
 
-        # Unique deviceAssetId üretimi (Dosya yolu ve boyutu kombinasyonu)
         file_stat = file_path.stat()
         raw_id = f"{file_path.name}_{file_stat.st_size}_{meta['created_at']}"
         device_asset_id = hashlib.sha1(raw_id.encode("utf-8")).hexdigest()
@@ -324,15 +313,12 @@ class ImmichClient:
                 }
                 res = self.session.post(url, data=data, files=files, timeout=300)
 
-            # 201 Created veya 200 OK -> Başarılı
             if res.status_code in (200, 201):
                 resp_json = res.json()
-                # Immich duplicate durumunda 200 dönüp status: 'duplicate' diyebilir
                 if resp_json.get("status") == "duplicate":
                     return True, "DUPLICATE", resp_json.get("id", "")
                 return True, "SUCCESS", resp_json.get("id", "")
 
-            # 409 Conflict -> Zaten sunucuda var
             elif res.status_code == 409:
                 return True, "DUPLICATE", ""
 
@@ -346,12 +332,9 @@ class ImmichClient:
 
 
 # ==============================================================================
-# 5. DOSYA TARAMA & TRANSFER YÖNETİCİSİ
+# 5. DOSYA TARAMA & PARALEL TRANSFER YÖNETİCİSİ
 # ==============================================================================
 def scan_takeout_directory(root_dir: Path) -> List[Path]:
-    """
-    Belirtilen dizindeki desteklenen tüm medya dosyalarını derinlemesine tarar.
-    """
     media_files = []
     with console.status("[bold cyan]Google Takeout klasörü taranıyor...[/bold cyan]", spinner="dots"):
         for root, _, files in os.walk(root_dir):
@@ -363,20 +346,19 @@ def scan_takeout_directory(root_dir: Path) -> List[Path]:
 
 
 def run_transfer():
-    # .env dosyasını yükle
     load_dotenv()
 
     instance_url = os.getenv("IMMICH_INSTANCE_URL")
     api_key = os.getenv("IMMICH_API_KEY")
     takeout_dir_str = os.getenv("TAKEOUT_DIR")
+    concurrency = int(os.getenv("CONCURRENCY", "4"))
 
     console.print(Panel.fit(
-        "[bold cyan]Immich Google Takeout Transfer Aracı[/bold cyan]\n"
-        "[dim]120 GB+ Arşivler için Optimize Edilmiş Güvenli Aktarım[/dim]",
+        "[bold cyan]Immich Google Takeout Paralel Transfer Aracı[/bold cyan]\n"
+        f"[dim]120 GB+ Arşivler için Çoklu İş Parçacıklı ({concurrency} Thread) Aktarım[/dim]",
         border_style="cyan"
     ))
 
-    # Gerekli parametre kontrolleri
     if not instance_url or not api_key:
         console.print("[bold red]HATA:[/bold red] .env dosyasında [yellow]IMMICH_INSTANCE_URL[/yellow] veya [yellow]IMMICH_API_KEY[/yellow] eksik!")
         console.print("[dim].env.example dosyasını .env olarak kopyalayıp bilgilerinizi giriniz.[/dim]")
@@ -392,7 +374,7 @@ def run_transfer():
 
     # 1. KİMLİK DOĞRULAMA VE HESAP KONTROLÜ
     console.print("\n[bold]1. Immich API Bağlantısı Kontrol Ediliyor...[/bold]")
-    client = ImmichClient(instance_url, api_key)
+    client = ImmichClient(instance_url, api_key, pool_size=concurrency)
 
     try:
         user_info = client.get_current_user()
@@ -404,12 +386,12 @@ def run_transfer():
     user_email = user_info.get("email") or "Bilinmiyor"
     user_id = user_info.get("id") or "-"
 
-    # Kullanıcı Onay Tablosu
     auth_table = Table(title="[bold green]Bağlantı Başarılı - Hedef Immich Hesabı[/bold green]", show_header=False)
     auth_table.add_row("Kullanıcı Adı", f"[bold]{user_name}[/bold]")
     auth_table.add_row("E-posta", f"[cyan]{user_email}[/cyan]")
     auth_table.add_row("Kullanıcı ID", f"[dim]{user_id}[/dim]")
     auth_table.add_row("Sunucu Adresi", f"[blue]{instance_url}[/blue]")
+    auth_table.add_row("Eşzamanlılık (Paralel)", f"[bold green]{concurrency} Worker (Thread)[/bold green]")
     console.print(auth_table)
 
     if not Confirm.ask("\nFotoğrafların bu hesaba yüklenmesini onaylıyor musunuz?"):
@@ -451,27 +433,31 @@ def run_transfer():
     summary_table.add_row("Daha Önce Yüklenmiş (Checkpoint)", f"[green]{already_uploaded_count:,} dosya (Atlanacak)[/green]")
     summary_table.add_row("Yüklenecek Yeni Dosyalar", f"[bold yellow]{len(pending_files):,} dosya[/bold yellow]")
     summary_table.add_row("Toplam Aktarılacak Boyut", f"[bold magenta]{total_pending_gb:.2f} GB[/bold magenta]")
+    summary_table.add_row("Paralel Yükleme Hızı", f"[bold cyan]{concurrency} Eşzamanlı Yükleme[/bold cyan]")
     console.print(summary_table)
 
     if not pending_files:
         console.print("\n[bold green]Tebrikler! Tüm dosyalar zaten Immich'e aktarılmış görünüyor.[/bold green]")
         sys.exit(0)
 
-    if not Confirm.ask("\nAktarım işlemine başlansın mı?"):
+    if not Confirm.ask("\nParalel aktarım işlemine başlansın mı?"):
         console.print("[yellow]İptal edildi.[/yellow]")
         sys.exit(0)
 
-    # 3. İLERLEME ÇUBUĞU VE AKTARIM DÖNGÜSÜ
-    console.print("\n[bold]3. Aktarım Başlatılıyor...[/bold]\n")
+    # 3. PARALEL İLERLEME ÇUBUĞU VE AKTARIM DÖNGÜSÜ
+    console.print(f"\n[bold]3. Paralel Aktarım Başlatılıyor ({concurrency} Thread)...[/bold]\n")
 
+    stats_lock = threading.Lock()
     success_count = 0
     duplicate_count = 0
     error_count = 0
+    completed_files = 0
+    log_lock = threading.Lock()
 
     # Rich progress bar kurulumu (Yüzde, Dosya sayısı, MB/s hız, Kalan Süre ETA)
     progress = Progress(
         SpinnerColumn(),
-        TextColumn("[bold cyan]{task.fields[filename]}", justify="left"),
+        TextColumn("[bold cyan]{task.fields[status_info]}", justify="left"),
         BarColumn(bar_width=40),
         TaskProgressColumn(),
         DownloadColumn(),
@@ -481,47 +467,39 @@ def run_transfer():
         refresh_per_second=4,
     )
 
-    with progress:
-        byte_task = progress.add_task(
-            "Upload",
-            total=total_pending_bytes,
-            filename=f"Başlatılıyor (0/{len(pending_files)})"
+    abort_event = threading.Event()
+
+    def worker_upload(item: Tuple[Path, int]):
+        nonlocal success_count, duplicate_count, error_count, completed_files
+
+        if abort_event.is_set():
+            return
+
+        media_path, file_size = item
+        file_key = str(media_path)
+
+        meta = TakeoutMetadataParser.parse_metadata(media_path)
+
+        file_uploaded_bytes = 0
+        def on_chunk_read(chunk_len: int):
+            nonlocal file_uploaded_bytes
+            file_uploaded_bytes += chunk_len
+            progress.advance(byte_task, chunk_len)
+
+        success, status_msg, immich_id = client.upload_asset(
+            media_path,
+            meta,
+            progress_callback=on_chunk_read
         )
 
-        for idx, (media_path, file_size) in enumerate(pending_files, 1):
-            short_name = media_path.name
-            if len(short_name) > 28:
-                short_name = short_name[:25] + "..."
+        # Kalan byte ilerletme (Hata veya fark durumunda barın senkron kalması için)
+        remaining_bytes = file_size - file_uploaded_bytes
+        if remaining_bytes > 0:
+            progress.advance(byte_task, remaining_bytes)
 
-            progress.update(
-                byte_task,
-                filename=f"[{idx}/{len(pending_files)}] {short_name}"
-            )
-
-            # Meta veriyi oku (.json dosyası)
-            meta = TakeoutMetadataParser.parse_metadata(media_path)
-
-            # Upload işlemi
-            current_file_uploaded_bytes = 0
-
-            def on_chunk_read(chunk_len: int):
-                nonlocal current_file_uploaded_bytes
-                current_file_uploaded_bytes += chunk_len
-                progress.advance(byte_task, chunk_len)
-
-            success, status_msg, immich_id = client.upload_asset(
-                media_path,
-                meta,
-                progress_callback=on_chunk_read
-            )
-
-            # Eğer hata olduysa ve hiç chunk okunmadıysa barın geri kalmamasını sağla
-            remaining_bytes = file_size - current_file_uploaded_bytes
-            if remaining_bytes > 0:
-                progress.advance(byte_task, remaining_bytes)
-
-            # Sonuç kaydı
-            file_key = str(media_path)
+        # Thread-safe istatistik güncelleme
+        with stats_lock:
+            completed_files += 1
             if success:
                 if status_msg == "DUPLICATE":
                     duplicate_count += 1
@@ -532,9 +510,39 @@ def run_transfer():
             else:
                 error_count += 1
                 db.record_upload(file_key, file_size, f"ERROR: {status_msg}")
-                # Hata durumunu log dosyasına yaz
-                with open("failed_uploads.log", "a", encoding="utf-8") as err_log:
-                    err_log.write(f"{datetime.now().isoformat()} | {file_key} | {status_msg}\n")
+                with log_lock:
+                    with open("failed_uploads.log", "a", encoding="utf-8") as err_log:
+                        err_log.write(f"{datetime.now().isoformat()} | {file_key} | {status_msg}\n")
+
+            progress.update(
+                byte_task,
+                status_info=f"[{completed_files}/{len(pending_files)}] Başarılı: {success_count} | Atlanan: {duplicate_count}"
+            )
+
+    with progress:
+        byte_task = progress.add_task(
+            "Upload",
+            total=total_pending_bytes,
+            status_info=f"[0/{len(pending_files)}] Başlatılıyor..."
+        )
+
+        try:
+            with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                futures = [executor.submit(worker_upload, item) for item in pending_files]
+                for future in as_completed(futures):
+                    if abort_event.is_set():
+                        break
+                    try:
+                        future.result()
+                    except Exception as e:
+                        with log_lock:
+                            with open("failed_uploads.log", "a", encoding="utf-8") as err_log:
+                                err_log.write(f"{datetime.now().isoformat()} | EXECUTOR_ERROR | {str(e)}\n")
+        except KeyboardInterrupt:
+            abort_event.set()
+            console.print("\n[bold red]İşlem kullanıcı tarafından durduruldu (Ctrl+C).[/bold red]")
+            console.print("[dim]Aktif yüklemeler kaydedildi. Betiği tekrar başlattığınızda kaldığı yerden devam edecektir.[/dim]")
+            sys.exit(0)
 
     # 4. SONUÇ RAPORU
     console.print("\n" + "=" * 60)
@@ -560,6 +568,5 @@ if __name__ == "__main__":
     try:
         run_transfer()
     except KeyboardInterrupt:
-        console.print("\n[bold red]İşlem kullanıcı tarafından durduruldu (Ctrl+C).[/bold red]")
-        console.print("[dim]Checkpoint kaydedildi. Betiği tekrar çalıştırdığınızda kaldığı yerden devam edecektir.[/dim]")
+        console.print("\n[bold red]İşlem durduruldu (Ctrl+C).[/bold red]")
         sys.exit(0)

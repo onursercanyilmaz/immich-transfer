@@ -4,22 +4,23 @@ Google Takeout ile indirilen devasa fotoğraf ve video arşivlerini (120 GB+) se
 
 ## Öne Çıkan Özellikler
 
-1. **Hesap Doğrulama:** Başlangıçta Immich `/api/users/me` endpoint'ine bağlanarak ad, e-posta ve sunucu bilgilerini listeler, aktarım için kullanıcı onayı ister.
-2. **Akıllı Google Takeout JSON Eşleştirme:**
+1. **Paralel & Eşzamanlı Yükleme (Multi-threading):** `CONCURRENCY` ayarı ile birden fazla dosyayı aynı anda yükleyerek bant genişliğini ve ev ağını maksimum verimle kullanır (Örn: 4-8 thread).
+2. **Hesap Doğrulama:** Başlangıçta Immich `/api/users/me` endpoint'ine bağlanarak ad, e-posta ve sunucu bilgilerini listeler, aktarım için kullanıcı onayı ister.
+3. **Akıllı Google Takeout JSON Eşleştirme:**
    - Standart `foto.jpg.json` ve `foto.json` biçimlerini tanır.
    - Google Takeout'un kopya dosyalarındaki `foto(1).jpg` $\rightarrow$ `foto.jpg(1).json` eşleştirmelerini çözer.
    - 46-51 karakterden sonra kırpılan uzun dosya adı JSON'larını otomatik yakalar.
    - `photoTakenTime.timestamp` değerini milisaniyelik UTC ISO-8601 tarihine dönüştürür.
-3. **Gerçek Zamanlı Terminal Paneli (Rich):**
+4. **Gerçek Zamanlı Terminal Paneli (Rich):**
    - **% İlerleme Çubuğu**
-   - **Anlık Transfer Hızı (MB/s)** (Her dosya yüklenirken okunan veri bloklarına göre canlı hesaplanır)
+   - **Birleşik Anlık Transfer Hızı (MB/s)** (Tüm paralel iş parçacıklarının toplam bant genişliğini canlı hesaplar)
    - **Kalan Tahmini Süre (ETA)**
    - **GB ve Dosya Sayaçları** (`12.450 / 35.000` dosya, `51.2 / 120.5 GB`)
-4. **Kesinti Koruması (Resume / Checkpoint):**
+5. **Thread-Safe Kesinti Koruması (Resume / Checkpoint):**
    - Yerel `checkpoint.db` (SQLite) sayesinde internet kopsa, elektrik gitse veya terminal kapansa bile tekrar çalıştırıldığında yüklenmiş dosyaları anında atlar ve kaldığı yerden devam eder.
-5. **Duplicate Yönetimi:**
+6. **Duplicate Yönetimi:**
    - Immich sunucusunda zaten var olan dosyalar çökme yaratmaz; `SKIPPED_DUPLICATE` olarak işaretlenir.
-6. **Güvenlik:**
+7. **Güvenlik:**
    - API anahtarları ve özel adresler `.env` dosyasında tutulur, git deposuna asla commit edilmez.
 
 ---
