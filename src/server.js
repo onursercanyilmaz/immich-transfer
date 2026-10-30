@@ -45,11 +45,17 @@ app.get('/api/events', (req, res) => {
   const newClient = { id: clientId, res };
   sseClients.push(newClient);
 
-  // İlk bağlantıda mevcut durumu gönder
+  // İlk bağlantıda (sayfa yenilendiğinde) mevcut tüm durumu gönder
   res.write(`event: init\ndata: ${JSON.stringify({
     state: migrator.state,
     stats: migrator.stats,
     logs: migrator.logs.slice(-100),
+    activeWorkers: Array.from(migrator.activeWorkers.values()),
+    activeConfig: migrator.config ? {
+      immichUrl: migrator.config.immichUrl,
+      takeoutDir: migrator.config.takeoutDir,
+      concurrency: migrator.concurrency
+    } : null,
     defaultTakeout: DEFAULT_TAKEOUT,
     envUrl: process.env.IMMICH_INSTANCE_URL || '',
     envKey: process.env.IMMICH_API_KEY ? '••••••••' : ''

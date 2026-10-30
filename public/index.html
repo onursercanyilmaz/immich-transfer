@@ -847,23 +847,42 @@
 
       eventSource.addEventListener('init', (e) => {
         const data = JSON.parse(e.data);
-        if (data.defaultTakeout && data.defaultTakeout.trim()) {
-          document.getElementById('inputTakeoutDir').value = data.defaultTakeout;
+
+        // 1. Ayarları Geri Yükle (Aktif aktarım varsa ondan, yoksa localStorage / env'den)
+        if (data.activeConfig) {
+          document.getElementById('inputImmichUrl').value = data.activeConfig.immichUrl || '';
+          document.getElementById('inputTakeoutDir').value = data.activeConfig.takeoutDir || '';
+          if (data.activeConfig.concurrency) {
+            document.getElementById('inputConcurrency').value = data.activeConfig.concurrency;
+            document.getElementById('concurrencyValue').textContent = `${data.activeConfig.concurrency} ${currentLang === 'tr' ? 'Thread' : 'Workers'}`;
+          }
         } else {
-          document.getElementById('inputTakeoutDir').value = '';
+          const savedUrl = localStorage.getItem('immich_url');
+          const savedTakeout = localStorage.getItem('takeout_dir');
+          if (savedUrl) document.getElementById('inputImmichUrl').value = savedUrl;
+          else if (data.envUrl) document.getElementById('inputImmichUrl').value = data.envUrl;
+
+          if (savedTakeout) document.getElementById('inputTakeoutDir').value = savedTakeout;
+          else if (data.defaultTakeout && data.defaultTakeout.trim()) document.getElementById('inputTakeoutDir').value = data.defaultTakeout;
         }
-        if (data.envUrl) {
-          document.getElementById('inputImmichUrl').value = data.envUrl;
-        }
-        if (data.envKey) {
-          document.getElementById('inputApiKey').value = data.envKey;
-        }
-        if (data.logs) {
+
+        // 2. Logları Geri Yükle
+        if (data.logs && data.logs.length > 0) {
+          clearConsole();
           data.logs.forEach(appendLog);
         }
+
+        // 3. İstatistikleri ve İlerleme Çubuğunu Geri Yükle
         if (data.stats) {
           updateMetrics(data.stats);
         }
+
+        // 4. Aktif İş Parçacıklarını (Workers) Göster
+        if (data.activeWorkers && data.activeWorkers.length > 0) {
+          renderWorkers(data.activeWorkers);
+        }
+
+        // 5. Durum Rozetini Güncelle (RUNNING, PAUSED, IDLE vb.)
         if (data.state) {
           updateStateBadge(data.state);
         }
@@ -884,17 +903,30 @@
       });
 
       eventSource.addEventListener('workers', (e) => {
-        const list = JSON.parse(e.data);
-        const container = document.getElementById('workersList');
-        container.innerHTML = '';
-        list.forEach(name => {
-          const item = document.createElement('div');
-          item.className = 'truncate flex items-center gap-1.5 text-zinc-300';
-          item.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-brand-400"></span> ${escapeHtml(name)}`;
-          container.appendChild(item);
-        });
+        renderWorkers(JSON.parse(e.data));
       });
     }
+
+    function renderWorkers(list) {
+      const container = document.getElementById('workersList');
+      if (!container) return;
+      container.innerHTML = '';
+      if (!list || list.length === 0) return;
+      list.forEach(name => {
+        const item = document.createElement('div');
+        item.className = 'truncate flex items-center gap-1.5 text-zinc-300';
+        item.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-brand-400"></span> ${escapeHtml(name)}`;
+        container.appendChild(item);
+      });
+    }
+
+    // Inputları yerel tarayıcı hafızasına kaydet (Sayfa yenilendiğinde kaybolmasın)
+    document.getElementById('inputImmichUrl').addEventListener('input', (e) => {
+      localStorage.setItem('immich_url', e.target.value.trim());
+    });
+    document.getElementById('inputTakeoutDir').addEventListener('input', (e) => {
+      localStorage.setItem('takeout_dir', e.target.value.trim());
+    });
 
     window.addEventListener('DOMContentLoaded', () => {
       setLanguage(currentLang);
