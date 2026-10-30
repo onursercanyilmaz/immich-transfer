@@ -1,0 +1,41 @@
+# Credentials & Local Config
+.env
+*.local.env
+
+# State & Cache (120 GB upload progress checkpoint)
+checkpoint.json
+checkpoint.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+dist/
+build/
+*.egg-info/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Go
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
