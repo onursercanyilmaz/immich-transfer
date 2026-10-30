@@ -154,7 +154,7 @@
             <div>
               <label id="t_lblTakeoutDir" class="block text-xs font-medium text-zinc-400 mb-1">Google Takeout Klasörü</label>
               <div class="flex gap-2">
-                <input id="inputTakeoutDir" type="text" placeholder="/takeout"
+                <input id="inputTakeoutDir" type="text" placeholder="/path/to/Google Photos"
                   class="flex-1 bg-zinc-950 border border-zinc-800 focus:border-brand-500 rounded-xl px-3.5 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition">
                 <button type="button" onclick="openFolderBrowser()"
                   class="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium rounded-xl border border-zinc-700 transition flex items-center gap-1.5 whitespace-nowrap">
@@ -189,8 +189,8 @@
                 ✓
               </div>
               <div class="overflow-hidden">
-                <div id="verifiedUserName" class="text-sm font-semibold text-emerald-300 truncate">Onur</div>
-                <div id="verifiedUserEmail" class="text-xs text-emerald-400/80 truncate">onur@example.com</div>
+                <div id="verifiedUserName" class="text-sm font-semibold text-emerald-300 truncate">-</div>
+                <div id="verifiedUserEmail" class="text-xs text-emerald-400/80 truncate">-</div>
               </div>
             </div>
           </div>
@@ -847,8 +847,10 @@
 
       eventSource.addEventListener('init', (e) => {
         const data = JSON.parse(e.data);
-        if (data.defaultTakeout) {
+        if (data.defaultTakeout && data.defaultTakeout.trim()) {
           document.getElementById('inputTakeoutDir').value = data.defaultTakeout;
+        } else {
+          document.getElementById('inputTakeoutDir').value = '';
         }
         if (data.envUrl) {
           document.getElementById('inputImmichUrl').value = data.envUrl;

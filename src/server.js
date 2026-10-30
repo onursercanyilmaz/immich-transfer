@@ -11,7 +11,7 @@ const Migrator = require('./migrator');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
-const DEFAULT_TAKEOUT = process.env.TAKEOUT_DIR || path.join(__dirname, '..', 'takeout');
+const DEFAULT_TAKEOUT = process.env.TAKEOUT_DIR || '';
 
 const checkpoint = new CheckpointManager(DATA_DIR);
 const migrator = new Migrator(checkpoint);
@@ -97,12 +97,14 @@ app.get('/api/browse', (req, res) => {
     let queryPath = req.query.path;
     let targetDir;
 
-    if (queryPath) {
+    if (queryPath && queryPath.trim()) {
       targetDir = path.resolve(queryPath);
-    } else if (fs.existsSync(DEFAULT_TAKEOUT)) {
-      targetDir = DEFAULT_TAKEOUT;
+    } else if (process.env.TAKEOUT_DIR && fs.existsSync(process.env.TAKEOUT_DIR)) {
+      targetDir = process.env.TAKEOUT_DIR;
+    } else if (fs.existsSync('/takeout')) {
+      targetDir = '/takeout';
     } else {
-      targetDir = process.env.HOME || process.cwd();
+      targetDir = '/';
     }
 
     if (!fs.existsSync(targetDir)) {

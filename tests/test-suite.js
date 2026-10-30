@@ -76,8 +76,8 @@ describe('Immich Google Takeout Migrator Test Suite', () => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
           id: 'user-guid-999',
-          name: 'Onur Test User',
-          email: 'onur@test.local',
+          name: 'Demo User',
+          email: 'demo@example.com',
           isAdmin: true
         }));
       }
@@ -185,8 +185,8 @@ describe('Immich Google Takeout Migrator Test Suite', () => {
   test('3. ImmichClient: /api/users/me doğrulama ve /api/assets yükleme', async () => {
     const validClient = new ImmichClient(`http://localhost:${mockServerPort}`, 'test-valid-key');
     const user = await validClient.getCurrentUser();
-    assert.equal(user.name, 'Onur Test User', 'Kullanıcı adı doğru dönmeli');
-    assert.equal(user.email, 'onur@test.local', 'E-posta doğru dönmeli');
+    assert.equal(user.name, 'Demo User', 'Kullanıcı adı doğru dönmeli');
+    assert.equal(user.email, 'demo@example.com', 'E-posta doğru dönmeli');
 
     // Geçersiz API Key testi
     const invalidClient = new ImmichClient(`http://localhost:${mockServerPort}`, 'wrong-key');
