@@ -152,7 +152,8 @@ class Migrator extends EventEmitter {
     if (!organizeOutputDir && config.takeoutDir) {
       const isDir = fs.existsSync(config.takeoutDir) && fs.statSync(config.takeoutDir).isDirectory();
       if (isDir) {
-        organizeOutputDir = path.join(path.dirname(config.takeoutDir), `${path.basename(config.takeoutDir)}_organized`);
+        // Doğrudan seçilen arşiv klasörünün içinde uploaded, duplicates, errors oluştur
+        organizeOutputDir = config.takeoutDir;
       } else {
         const ext = path.extname(config.takeoutDir);
         organizeOutputDir = path.join(path.dirname(config.takeoutDir), `${path.basename(config.takeoutDir, ext)}_organized`);
