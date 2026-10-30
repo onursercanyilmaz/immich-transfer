@@ -1,99 +1,226 @@
-# 🚀 Immich Google Takeout Migrator (Web UI & Docker)
+<div align="center">
 
-[🇹🇷 Türkçe](#-türkçe) | [🇬🇧 English](#-english)
+  <img src="assets/logo.svg" alt="Immich Google Takeout Migrator Logo" width="160" height="160" />
 
----
+  # Immich Google Takeout Migrator
 
-## 🇹🇷 Türkçe
+  **Effortless, resilient, and ultra-fast web-based migration tool for importing massive Google Takeout archives (120 GB+) into your self-hosted Immich instance.**
 
-Google Takeout ile indirilen devasa fotoğraf ve video arşivlerini (120 GB+) self-hosted **Immich** sunucunuza kolayca, güvenle ve yüksek hızla aktarmanızı sağlayan modern, Docker destekli ve web arayüzlü göç aracı.
+  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+  [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?style=flat-square&logo=docker&logoColor=white)](docker-compose.yml)
+  [![Node.js](https://img.shields.io/badge/Node.js-20+-339933.svg?style=flat-square&logo=node.js&logoColor=white)](package.json)
+  [![Tests](https://img.shields.io/badge/Tests-5%2F5%20Passing-success.svg?style=flat-square)](tests/)
+  [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg?style=flat-square)](https://github.com)
+  [![i18n](https://img.shields.io/badge/Language-English%20%7C%20T%C3%BCrk%C3%A7e-indigo.svg?style=flat-square)](public/index.html)
 
-Terminal komutlarıyla veya karmaşık `.env` ayarlarıyla uğraşmak istemeyenler için **tek komutla** ayağa kalkar ve tarayıcınızda şık bir kontrol paneli sunar.
+  <br />
 
-### 🌟 Öne Çıkan Özellikler
+  [Features](#-key-features) •
+  [Architecture](#-architecture) •
+  [Quick Start](#-quick-start) •
+  [Web Interface](#-web-interface) •
+  [Takeout Parsing](#-how-takeout-sidecars-are-handled) •
+  [Testing](#-testing) •
+  [Türkçe Açıklama](#-t%C3%BCrk%C3%A7e)
 
-- 🌐 **Modern Web Arayüzü (Dashboard):** Türkçe ve İngilizce dil desteği (🇹🇷 TR / 🇬🇧 EN).
-- 🐳 **Docker & Docker Compose ile Tek Tıkla Kurulum:** Hiçbir bağımlılık (Python, Node.js vb.) kurmanıza gerek kalmadan doğrudan Docker ile çalışır.
-- ⚡ **Eşzamanlı (Paralel) Yükleme:** Ayarlanabilir worker havuzu ile (1-10 paralel akış) ev ağınızın ve diskinizin maksimum hızına ulaşır.
-- 📊 **Gerçek Zamanlı Metrikler:** Canlı yüzde göstergesi (`%`), anlık transfer hızı (`MB/s`), kalan tahmini süre (`ETA`) ve sayaçlar.
-- 🧠 **Akıllı Google Takeout Eşleştirici:** `foto.jpg.json`, `foto.json`, `foto(1).jpg` $\leftrightarrow$ `foto.jpg(1).json` ve kırpılmış isimleri otomatik çözer.
-- 💾 **Elektrik / Kapanma Korumalı Checkpoint (fsync):** Bilgisayar kapansa bile aktarılan her dosya `fsync` güvencesiyle diske yazılır, kaldığı yerden devam eder.
-- 📜 **Canlı Konsol ve Log İndirme:** Web arayüzünde canlı kayan terminal penceresi ve tek tıkla `transfer.log` dosyasını indirebilme imkanı.
-
-### 🚀 Hızlı Başlangıç (Docker ile)
-
-```yaml
-# docker-compose.yml
-services:
-  immich-transfer:
-    build: .
-    container_name: immich-transfer
-    ports:
-      - "3000:3000"
-    volumes:
-      # Kendi Google Takeout klasörünüzün yolunu yazın (Salt Okunur / Read-Only):
-      - /path/to/Google Photos:/takeout:ro
-      # Checkpoint ve logların bilgisayarınızda kalıcı olması için:
-      - ./data:/data
-    restart: unless-stopped
-```
-
-```bash
-docker compose up -d
-```
-Tarayıcınızdan **`http://localhost:3000`** adresine gidin ve aktarımı başlatın!
+</div>
 
 ---
 
-## 🇬🇧 English
+## 💡 Why This Tool?
 
-A modern, Dockerized web-based migration tool designed to easily, safely, and rapidly transfer massive Google Takeout photo and video archives (120 GB+) into your self-hosted **Immich** server.
+Migrating 100+ GB of Google Photos exports is notoriously frustrating:
+* **Separated Metadata:** Capture dates, GPS coordinates, descriptions, and favorite flags are exiled into companion `.json` sidecar files instead of the media files.
+* **Corrupted & Truncated Filenames:** Google Takeout arbitrarily truncates long filenames at 46–51 characters, creates weird duplicate formats (`photo(1).jpg` $\leftrightarrow$ `photo.jpg(1).json`), and drops extensions.
+* **Interrupted Uploads:** If your terminal, computer, or Wi-Fi crashes 4 hours into a 120 GB transfer, standard scripts start over from scratch or waste gigabytes uploading duplicates.
+* **Command-Line Fatigue:** Not everyone wants to mess around with Python virtual environments, missing libraries, or complex CLI parameters.
 
-Designed for zero friction: launch with a single command without dealing with complex command lines or configuration files.
+**Immich Takeout Migrator** solves this once and for all: it provides a **single-command Docker deployment**, an **interactive web dashboard**, multi-threaded speed, an **interactive folder browser**, and **crash-proof `fsync` persistence**.
 
-### 🌟 Key Features
+---
 
-- 🌐 **Modern Web Dashboard:** Full bilingual support (🇹🇷 TR / 🇬🇧 EN) with language toggle.
-- 🐳 **Zero-Dependency Docker Deployment:** Runs instantly using Docker & Docker Compose without needing local Python or Node.js runtimes.
-- ⚡ **Multi-Threaded Parallel Uploads:** Adjustable worker pool (1-10 concurrency) to saturate your local network and storage speeds.
-- 📊 **Real-time Live Metrics:** Dynamic progress bar (`%`), current upload speed (`MB/s`), remaining time (`ETA`), and live active worker status.
-- 🧠 **Smart Google Takeout Sidecar Matcher:**
-  - Handles `photo.jpg.json` and `photo.json`
-  - Resolves duplicate naming anomalies: `photo(1).jpg` $\leftrightarrow$ `photo.jpg(1).json`
-  - Truncated name recovery (46-51 character limits)
-  - Extracts `photoTakenTime.timestamp` to authoritative UTC ISO-8601 timestamps.
-- 💾 **Power-Loss & Crash Resilient (fsync Checkpoint):** Each uploaded asset is written with immediate `fsync` flushing. If power is cut or your machine reboots, it immediately skips existing files and resumes right where it stopped.
-- 📜 **Live Console & Log Export:** Real-time log stream via Server-Sent Events (SSE) and one-click `transfer.log` download.
+## 🌟 Key Features
 
-### 🚀 Quick Start (Docker)
+| Feature | Description |
+| :--- | :--- |
+| 🌐 **Modern Web Dashboard** | Complete control via your browser (`http://localhost:3000`). No CLI commands needed after launch. |
+| 📁 **Interactive Folder Browser** | Type paths directly or click the **Browse** button to visually explore and pick directories. |
+| ⚡ **Multi-Threaded Concurrency** | Configurable worker pool (1–10 streams) saturates your local network and storage bandwidth. |
+| 📊 **Real-time Live Metrics** | Combined speed (`MB/s`), accurate remaining time (`ETA`), percentage bar, and active worker indicators. |
+| 🧠 **Smart Sidecar Matcher** | Resolves exact `.ext.json`, extensionless `.json`, Google duplicate parenthesized patterns, and truncated names. |
+| 💾 **Crash-Proof `fsync` Checkpoint** | Flushes state directly to physical disk. If your computer shuts down, it safely resumes in seconds. |
+| 🛡️ **Zero Duplicate Waste** | Auto-detects server-side duplicates (`409 Conflict` or status duplicate) and marks them as skipped. |
+| 🌍 **Bilingual Interface** | Instant toggle between **English** and **Türkçe** (saved in local storage). |
+| 📜 **Live Terminal Console** | Watch real-time log events via Server-Sent Events (SSE) with one-click log export. |
 
-1. Clone the repository:
+---
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart LR
+    subgraph Takeout["📂 Google Takeout Archive"]
+        Media["📷 Media (.jpg, .mp4, .heic)"]
+        Json["📝 Sidecar (.json)"]
+    end
+
+    subgraph Migrator["🚀 Immich Takeout Migrator"]
+        Scanner["Scanner & Matcher"]
+        WorkerPool["⚡ Concurrency Pool (1-10)"]
+        Checkpoint["💾 fsync Checkpoint"]
+        WebUI["🌐 Web UI & SSE Stream"]
+    end
+
+    subgraph Immich["🏠 Self-Hosted Immich"]
+        AuthAPI["/api/users/me"]
+        UploadAPI["/api/assets (Multipart)"]
+    end
+
+    Media --> Scanner
+    Json --> Scanner
+    Scanner --> WorkerPool
+    WorkerPool --> Checkpoint
+    WorkerPool -->|Status & Metrics| WebUI
+    WorkerPool -->|1. Verify Account| AuthAPI
+    WorkerPool -->|2. Stream Upload + ISO Date| UploadAPI
+```
+
+---
+
+## 🚀 Quick Start
+
+### Option A: Docker Compose (Recommended)
+
+1. **Clone the repository:**
    ```bash
    git clone https://github.com/your-username/immich-transfer.git
    cd immich-transfer
    ```
 
-2. Edit `docker-compose.yml` to point to your Google Takeout folder:
+2. **Configure your volume mount in `docker-compose.yml`:**
    ```yaml
-   volumes:
-     - /path/to/Google Photos:/takeout:ro
-     - ./data:/data
+   services:
+     immich-transfer:
+       build: .
+       container_name: immich-transfer
+       ports:
+         - "3000:3000"
+       volumes:
+         # Path to your extracted Google Photos Takeout folder (Read-Only):
+         - /path/to/Google Photos:/takeout:ro
+         # Local directory for checkpoints and logs:
+         - ./data:/data
+       restart: unless-stopped
    ```
 
-3. Start the container:
+3. **Start the service:**
    ```bash
    docker compose up -d
    ```
 
-Open **`http://localhost:3000`** in your browser, enter your Immich URL & API Key, verify your account, and hit **Start Migration**!
+4. Open **[`http://localhost:3000`](http://localhost:3000)** in your browser!
 
-### 💻 Running without Docker (Node.js)
+---
+
+### Option B: Bare Metal (Node.js 20+)
+
+If you prefer running without Docker:
 
 ```bash
+# 1. Install dependencies
 npm install
-npm test    # Run automated test suite
-npm start   # Starts web UI on http://localhost:3000
+
+# 2. Run automated verification tests
+npm test
+
+# 3. Start the server
+npm start
 ```
 
-### 📄 License
-MIT License. Free to use, modify, and distribute.
+Visit `http://localhost:3000` to access the dashboard.
+
+---
+
+### Option C: Standalone Python CLI
+
+For headless servers or environments where you only have Python:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env     # Fill in your Immich URL and API Key
+python3 transfer.py
+```
+
+---
+
+## 🖥️ Web Interface Walkthrough
+
+1. **Account Verification:** Enter your Immich Server URL and API Key, then click **"Verify Connection & Account"**. It queries `/api/users/me` and displays a confirmed green badge with the target user's avatar, name, and email.
+2. **Directory Selection:** Either type the path or click the yellow **"Browse"** button to open the interactive directory explorer modal.
+3. **One-Click Scan:** Click **"Scan Takeout Folder"**. The app calculates total media files, already migrated assets, new files, and total volume in gigabytes.
+4. **Start & Monitor:** Hit **"Start Migration"**. Watch real-time upload speed (`MB/s`), remaining time (`ETA`), percentage bars, and live worker threads as they stream data.
+5. **Pause & Resume Anytime:** Safely pause, stop, or reboot your system. The tool never re-uploads files already confirmed by the checkpoint.
+
+---
+
+## 🧩 How Takeout Sidecars Are Handled
+
+Google Takeout companion `.json` files are matched using a multi-tier fallback strategy:
+
+1. **Direct Match:** `filename.ext.json` (e.g. `IMG_001.JPG.json`)
+2. **Extensionless Match:** `filename.json` (e.g. `IMG_001.json`)
+3. **Duplicate Parenthesis Pattern:** `IMG_001(1).JPG` $\rightarrow$ `IMG_001.JPG(1).json` or `IMG_001(1).JPG.json`
+4. **Truncated Names:** Long filenames exceeding ~46 characters are fuzzy-matched against truncated JSON files sharing the identical stem prefix.
+5. **Fallback:** If a JSON sidecar is absent or malformed, the file's filesystem modification time (`mtime`) is used as a reliable fallback without halting execution.
+
+---
+
+## 🧪 Testing
+
+The repository comes with a zero-external-dependency automated test suite testing the scanner, sidecar parser, `fsync` persistence, and an in-process mock Immich HTTP server.
+
+```bash
+npm test
+```
+
+**Test Coverage Summary:**
+* `TakeoutScanner`: File filtering and edge-case sidecar metadata extraction.
+* `CheckpointManager`: Disk persistence, restart recovery, and error isolation.
+* `ImmichClient`: User authentication verification and multipart asset streaming.
+* `End-to-End Migrator`: Full pipeline execution from scan to 100% completion.
+* `Folder Browser`: Subdirectory navigation and parent traversal.
+
+---
+
+## ⚙️ Configuration Reference
+
+| Environment Variable | Default | Description |
+| :--- | :--- | :--- |
+| `PORT` | `3000` | Port for the web dashboard. |
+| `DATA_DIR` | `/data` or `./data` | Directory where `checkpoint.jsonl` and `transfer.log` reside. |
+| `TAKEOUT_DIR` | `/takeout` | Default directory path shown in the web browser. |
+| `IMMICH_INSTANCE_URL` | *None* | Optional pre-fill for the Immich server URL. |
+| `IMMICH_API_KEY` | *None* | Optional pre-fill for the Immich API Key. |
+| `CONCURRENCY` | `4` | Default number of parallel upload workers (1–10). |
+
+---
+
+## 🇹🇷 Türkçe
+
+Google Takeout ile indirilen devasa fotoğraf ve video arşivlerini (120 GB+) self-hosted **Immich** sunucunuza kolayca, güvenle ve maksimum hızla aktaran modern, Docker destekli web aracıdır.
+
+- **Tek Tıkla Docker Kurulumu:** `docker compose up -d` komutuyla anında ayağa kalkar.
+- **İnteraktif Klasör Gezgini (Gözat):** Klasör yolunu ister elle yazın, ister "Gözat" penceresiyle tıklayarak seçin.
+- **Paralel Yükleme:** Ağ hızınızı tam kapasite kullanan çoklu iş parçacığı (1–10 thread).
+- **Kapanma Koruması (`fsync`):** Bilgisayar kapansa bile kaldığı dosyadan anında devam eder.
+- **Türkçe & İngilizce Desteği:** Sağ üst köşedeki butonla anında dil değiştirilebilir.
+
+Detaylı Türkçe kullanım adımları için [Hızlı Başlangıç](#-quick-start) bölümünü inceleyebilirsiniz.
+
+---
+
+## 📄 License
+
+Distributed under the **MIT License**. See `LICENSE` for more information. Free for personal and commercial self-hosted use.
