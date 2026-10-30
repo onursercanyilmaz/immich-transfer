@@ -208,18 +208,27 @@ class Migrator extends EventEmitter {
           }
         }
 
-        const remainingBytes = Math.max(0, this.stats.totalBytes - this.stats.uploadedBytes);
-        if (this.stats.speedBytesPerSec > 1024 && remainingBytes > 0) {
-          const targetEta = Math.round(remainingBytes / this.stats.speedBytesPerSec);
-          if (this.stats.etaSeconds === 0) {
-            this.stats.etaSeconds = targetEta;
-          } else {
-            // ETA ani sıçramalarını önleyen yumuşatma
-            this.stats.etaSeconds = Math.round(this.stats.etaSeconds * 0.70 + targetEta * 0.30);
-          }
-        } else if (remainingBytes === 0) {
+        const remainingFiles = Math.max(0, this.stats.totalFiles - this.stats.processedFiles);
+        if (remainingFiles === 0) {
           this.stats.etaSeconds = 0;
           this.stats.speedBytesPerSec = 0;
+          this.stats.percentage = 100;
+        } else {
+          // Gerçek dosya ortalamasına göre kalan byte ve ETA tahmini
+          const avgBytes = this.stats.processedFiles > 0
+            ? (this.stats.uploadedBytes / this.stats.processedFiles)
+            : (this.stats.totalBytes / Math.max(1, this.stats.totalFiles));
+          const estRemainingBytes = Math.max(0, remainingFiles * avgBytes);
+
+          if (this.stats.speedBytesPerSec > 1024 && estRemainingBytes > 0) {
+            const targetEta = Math.round(estRemainingBytes / this.stats.speedBytesPerSec);
+            if (this.stats.etaSeconds === 0) {
+              this.stats.etaSeconds = targetEta;
+            } else {
+              // ETA ani sıçramalarını önleyen yumuşatma
+              this.stats.etaSeconds = Math.round(this.stats.etaSeconds * 0.70 + targetEta * 0.30);
+            }
+          }
         }
 
         this.emit('progress', this.stats);
@@ -283,8 +292,8 @@ class Migrator extends EventEmitter {
           this.stats.duplicateCount++;
           this.stats.processedFiles++;
           this.stats.uploadedBytes += item.size;
-          if (this.stats.totalBytes > 0) {
-            this.stats.percentage = Math.min(100, Math.round((this.stats.uploadedBytes / this.stats.totalBytes) * 100));
+          if (this.stats.totalFiles > 0) {
+            this.stats.percentage = Math.min(100, Math.round((this.stats.processedFiles / this.stats.totalFiles) * 100));
           }
           this.checkpoint.record(item.fullPath, item.size, 'DUPLICATE', '', 'Paralel kopya atlandı');
           this.log('SKIP', `Paralel kopya tespit edildi, ağ harcanmadan atlandı: ${item.name}`);
@@ -305,8 +314,9 @@ class Migrator extends EventEmitter {
         const onProgress = (chunkLen) => {
           fileUploadedBytes += chunkLen;
           this.stats.uploadedBytes += chunkLen;
-          if (this.stats.totalBytes > 0) {
-            this.stats.percentage = Math.min(100, Math.round((this.stats.uploadedBytes / this.stats.totalBytes) * 100));
+          if (this.stats.totalFiles > 0) {
+            const currentFraction = item.size > 0 ? (fileUploadedBytes / item.size) : 0;
+            this.stats.percentage = Math.min(100, Math.round(((this.stats.processedFiles + currentFraction) / this.stats.totalFiles) * 100));
           }
 
           // Aşırı SSE trafiğini engellemek ve UI'ı akıcı tutmak için en fazla 250ms'de bir emit et
@@ -335,8 +345,8 @@ class Migrator extends EventEmitter {
         }
 
         this.stats.processedFiles++;
-        if (this.stats.totalBytes > 0) {
-          this.stats.percentage = Math.min(100, Math.round((this.stats.uploadedBytes / this.stats.totalBytes) * 100));
+        if (this.stats.totalFiles > 0) {
+          this.stats.percentage = Math.min(100, Math.round((this.stats.processedFiles / this.stats.totalFiles) * 100));
         }
 
         if (result.success) {
