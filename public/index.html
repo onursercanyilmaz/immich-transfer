@@ -263,6 +263,36 @@
                 <input type="checkbox" id="checkLivePhotos" checked
                   class="w-4 h-4 rounded bg-zinc-900 border-zinc-700 text-brand-500 focus:ring-0 focus:ring-offset-0 cursor-pointer">
               </label>
+
+              <!-- Option: Auto Organize Folders -->
+              <div class="p-2.5 rounded-xl bg-zinc-950/70 border border-zinc-800/80 space-y-2">
+                <label class="flex items-center justify-between cursor-pointer select-none">
+                  <div class="flex items-center gap-2.5">
+                    <span class="text-amber-400 text-base">📁</span>
+                    <div>
+                      <div id="t_optOrganizeTitle" class="text-xs font-medium text-zinc-200">Otomatik Sınıflandırma (Auto-Organize)</div>
+                      <div id="t_optOrganizeDesc" class="text-[10px] text-zinc-500">uploaded, duplicates, errors klasörlerine ayır</div>
+                    </div>
+                  </div>
+                  <input type="checkbox" id="checkOrganize" checked onchange="toggleOrganizeSettings()"
+                    class="w-4 h-4 rounded bg-zinc-900 border-zinc-700 text-brand-500 focus:ring-0 focus:ring-offset-0 cursor-pointer">
+                </label>
+
+                <!-- Sub-options for organize -->
+                <div id="organizeSettingsBox" class="pt-1.5 border-t border-zinc-800/60 flex items-center justify-between text-[11px]">
+                  <span id="t_lblOrganizeAction" class="text-zinc-400">İşlem Türü:</span>
+                  <div class="flex items-center gap-2.5">
+                    <label class="flex items-center gap-1 cursor-pointer text-zinc-300">
+                      <input type="radio" name="organizeAction" value="move" checked class="text-brand-500 bg-zinc-900 border-zinc-700 focus:ring-0">
+                      <span id="t_optMove">Taşı (Move)</span>
+                    </label>
+                    <label class="flex items-center gap-1 cursor-pointer text-zinc-400">
+                      <input type="radio" name="organizeAction" value="copy" class="text-brand-500 bg-zinc-900 border-zinc-700 focus:ring-0">
+                      <span id="t_optCopy">Kopyala (Copy)</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -451,6 +481,11 @@
         optZipsDesc: "Çıkarmadan doğrudan .zip içinden oku",
         optLivePhotosTitle: "Canlı Fotoğrafları Eşle",
         optLivePhotosDesc: "Fotoğraf ve videoyu tek Motion Photo yap",
+        optOrganizeTitle: "Otomatik Sınıflandırma (Auto-Organize)",
+        optOrganizeDesc: "uploaded, duplicates, errors klasörlerine ayır",
+        lblOrganizeAction: "İşlem Türü:",
+        optMove: "Taşı (Move - Yer Aç)",
+        optCopy: "Kopyala (Copy - Orijinali Koru)",
         subExtracted: "Klasörden",
         subZips: "ZIP İçi",
         subLive: "Live Photo",
@@ -526,6 +561,11 @@
         optZipsDesc: "Stream directly without extracting .zip",
         optLivePhotosTitle: "Pair Live Photos",
         optLivePhotosDesc: "Link photo and video into Motion Photo",
+        optOrganizeTitle: "Auto-Organize Folders",
+        optOrganizeDesc: "Sort into uploaded, duplicates, errors",
+        lblOrganizeAction: "Action Mode:",
+        optMove: "Move (Save Space)",
+        optCopy: "Copy (Keep Original)",
         subExtracted: "Extracted",
         subZips: "In ZIP",
         subLive: "Live Photos",
@@ -625,6 +665,11 @@
       document.getElementById('t_optZipsDesc').textContent = t.optZipsDesc;
       document.getElementById('t_optLivePhotosTitle').textContent = t.optLivePhotosTitle;
       document.getElementById('t_optLivePhotosDesc').textContent = t.optLivePhotosDesc;
+      document.getElementById('t_optOrganizeTitle').textContent = t.optOrganizeTitle;
+      document.getElementById('t_optOrganizeDesc').textContent = t.optOrganizeDesc;
+      document.getElementById('t_lblOrganizeAction').textContent = t.lblOrganizeAction;
+      document.getElementById('t_optMove').textContent = t.optMove;
+      document.getElementById('t_optCopy').textContent = t.optCopy;
       document.getElementById('t_subExtracted').textContent = t.subExtracted;
       document.getElementById('t_subZips').textContent = t.subZips;
       document.getElementById('t_subLive').textContent = t.subLive;
@@ -997,6 +1042,14 @@
       }
     }
 
+    function toggleOrganizeSettings() {
+      const isChecked = document.getElementById('checkOrganize').checked;
+      const box = document.getElementById('organizeSettingsBox');
+      if (box) {
+        box.style.display = isChecked ? 'flex' : 'none';
+      }
+    }
+
     async function startTransfer() {
       const immichUrl = document.getElementById('inputImmichUrl').value.trim();
       const apiKey = document.getElementById('inputApiKey').value.trim();
@@ -1005,6 +1058,8 @@
       const scanExtracted = document.getElementById('checkExtracted').checked;
       const scanZips = document.getElementById('checkZips').checked;
       const pairLivePhotos = document.getElementById('checkLivePhotos').checked;
+      const organizeMedia = document.getElementById('checkOrganize').checked;
+      const organizeAction = document.querySelector('input[name="organizeAction"]:checked')?.value || 'move';
       const t = I18N[currentLang];
 
       if (!immichUrl || !apiKey) {
@@ -1016,7 +1071,17 @@
         const res = await fetch('/api/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ immichUrl, apiKey, takeoutDir, concurrency, scanExtracted, scanZips, pairLivePhotos })
+          body: JSON.stringify({
+            immichUrl,
+            apiKey,
+            takeoutDir,
+            concurrency,
+            scanExtracted,
+            scanZips,
+            pairLivePhotos,
+            organizeMedia,
+            organizeAction
+          })
         });
         const data = await res.json();
         if (data.success) {

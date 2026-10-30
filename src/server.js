@@ -155,7 +155,19 @@ app.get('/api/browse', (req, res) => {
 // API: Aktarımı Başlat
 app.post('/api/start', async (req, res) => {
   try {
-    const { immichUrl, apiKey, takeoutDir, concurrency, scanExtracted, scanZips, pairLivePhotos } = req.body;
+    const {
+      immichUrl,
+      apiKey,
+      takeoutDir,
+      concurrency,
+      scanExtracted,
+      scanZips,
+      pairLivePhotos,
+      organizeMedia,
+      organizeAction,
+      organizeOutputDir
+    } = req.body;
+
     if (!immichUrl || !apiKey) {
       return res.status(400).json({ error: 'Immich URL ve API Key eksik!' });
     }
@@ -167,7 +179,10 @@ app.post('/api/start', async (req, res) => {
       concurrency: concurrency || 4,
       scanExtracted: scanExtracted !== false,
       scanZips: scanZips !== false,
-      pairLivePhotos: pairLivePhotos !== false
+      pairLivePhotos: pairLivePhotos !== false,
+      organizeMedia: organizeMedia !== false,
+      organizeAction: organizeAction || 'move',
+      organizeOutputDir: organizeOutputDir || null
     });
 
     res.json({ success: true, state: migrator.state });

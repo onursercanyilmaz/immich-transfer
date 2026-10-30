@@ -9,6 +9,7 @@ const CheckpointManager = require('../src/checkpoint');
 const TakeoutScanner = require('../src/takeout');
 const ImmichClient = require('../src/immich');
 const Migrator = require('../src/migrator');
+const MediaOrganizer = require('../src/organizer');
 
 const TEST_DIR = path.join(__dirname, 'temp_test_data');
 const TEST_CHECKPOINT_DIR = path.join(TEST_DIR, 'checkpoint');
@@ -475,5 +476,61 @@ describe('Immich Transfer Test Suite (ZIP & Live Photo Edition)', () => {
       mtime: todayMtime
     });
     assert.equal(metaCreation.createdAt, '2020-01-01T00:00:00.000Z', 'creationTime fallback doğru çalışmalı');
+  });
+
+  // TEST 11: Otomatik Sınıflandırma (MediaOrganizer: uploaded, duplicates, errors)
+  test('11. MediaOrganizer: uploaded, duplicates ve errors klasörleme ve hata raporlama', async () => {
+    const orgOutDir = path.join(TEST_DIR, 'organizer_output');
+    const organizer = new MediaOrganizer(orgOutDir, { action: 'copy', enabled: true });
+
+    // 1. Başarılı aktarım (uploaded) testi
+    const samplePhoto = path.join(TEST_DIR, 'organizer_test_photo.jpg');
+    fs.writeFileSync(samplePhoto, 'sample photo binary data');
+    const sampleJson = path.join(TEST_DIR, 'organizer_test_photo.jpg.json');
+    fs.writeFileSync(sampleJson, JSON.stringify({ description: 'Organize test' }));
+
+    const itemSuccess = {
+      isZip: false,
+      fullPath: samplePhoto,
+      name: 'organizer_test_photo.jpg',
+      size: 25,
+      isLivePhoto: false
+    };
+
+    const resUploaded = await organizer.organize(itemSuccess, 'uploaded');
+    assert.ok(resUploaded, 'Uploaded organizasyonu başarılı dönmeli');
+    assert.ok(fs.existsSync(path.join(orgOutDir, 'uploaded', 'organizer_test_photo.jpg')), 'uploaded/ içine dosya kopyalanmalı');
+    assert.ok(fs.existsSync(path.join(orgOutDir, 'uploaded', 'organizer_test_photo.jpg.json')), 'uploaded/ içine JSON kopyalanmalı');
+
+    // 2. Mükerrer aktarım (duplicates) testi
+    const resDup = await organizer.organize(itemSuccess, 'duplicates');
+    assert.ok(resDup, 'Duplicate organizasyonu başarılı dönmeli');
+    assert.ok(fs.existsSync(path.join(orgOutDir, 'duplicates', 'organizer_test_photo.jpg')), 'duplicates/ içine dosya kopyalanmalı');
+
+    // 3. Hatalı aktarım (errors) testi ve .error.txt açıklaması
+    const resErr = await organizer.organize(itemSuccess, 'errors', 'Immich HTTP 413: Payload Too Large');
+    assert.ok(resErr, 'Error organizasyonu başarılı dönmeli');
+    assert.ok(fs.existsSync(path.join(orgOutDir, 'errors', 'organizer_test_photo.jpg')), 'errors/ içine dosya kopyalanmalı');
+    
+    const errLogPath = path.join(orgOutDir, 'errors', 'organizer_test_photo.jpg.error.txt');
+    assert.ok(fs.existsSync(errLogPath), 'errors/ içine .error.txt oluşturulmalı');
+    const errText = fs.readFileSync(errLogPath, 'utf8');
+    assert.ok(errText.includes('Immich HTTP 413: Payload Too Large'), 'Hata mesajı raporda bulunmalı');
+
+    // 4. ZIP içindeki dosyanın organizer ile çıkarılması
+    const zipPath = path.join(TEST_DIR, 'test_takeout.zip');
+    const zipItem = {
+      isZip: true,
+      zipPath,
+      entryName: 'photo_inside_zip.jpg',
+      name: 'photo_inside_zip.jpg',
+      size: 100,
+      jsonContent: JSON.stringify({ title: 'zip photo' }),
+      isLivePhoto: false
+    };
+
+    const resZipOrg = await organizer.organize(zipItem, 'uploaded');
+    assert.ok(resZipOrg, 'ZIP içi dosya başarıyla çıkarılmalı');
+    assert.ok(fs.existsSync(path.join(orgOutDir, 'uploaded', 'photo_inside_zip.jpg')), 'ZIP içindeki dosya uploaded klasörüne çıkarılmalı');
   });
 });

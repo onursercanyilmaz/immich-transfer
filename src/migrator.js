@@ -1,7 +1,10 @@
 const EventEmitter = require('events');
+const fs = require('fs');
+const path = require('path');
 const ImmichClient = require('./immich');
 const TakeoutScanner = require('./takeout');
 const CheckpointManager = require('./checkpoint');
+const MediaOrganizer = require('./organizer');
 
 class Migrator extends EventEmitter {
   constructor(checkpointManager) {
@@ -141,8 +144,31 @@ class Migrator extends EventEmitter {
       });
     }
 
+    // Otomatik Sınıflandırma (Auto-Organize: uploaded, duplicates, errors)
+    const organizeEnabled = config.organizeMedia !== false;
+    const organizeAction = config.organizeAction || 'move'; // 'move' veya 'copy'
+    let organizeOutputDir = config.organizeOutputDir;
+
+    if (!organizeOutputDir && config.takeoutDir) {
+      const isDir = fs.existsSync(config.takeoutDir) && fs.statSync(config.takeoutDir).isDirectory();
+      if (isDir) {
+        organizeOutputDir = path.join(path.dirname(config.takeoutDir), `${path.basename(config.takeoutDir)}_organized`);
+      } else {
+        const ext = path.extname(config.takeoutDir);
+        organizeOutputDir = path.join(path.dirname(config.takeoutDir), `${path.basename(config.takeoutDir, ext)}_organized`);
+      }
+    }
+
+    this.organizer = new MediaOrganizer(organizeOutputDir, {
+      action: organizeAction,
+      enabled: organizeEnabled
+    });
+
     this.state = 'RUNNING';
     this.log('INFO', `Aktarım başlatıldı. Paralellik (Concurrency): ${this.concurrency}`);
+    if (this.organizer.enabled && organizeOutputDir) {
+      this.log('INFO', `📁 Otomatik Sınıflandırma [${organizeAction.toUpperCase()}]: ${organizeOutputDir} (/uploaded, /duplicates, /errors)`);
+    }
     this.emit('status', { state: this.state });
 
     // Yumuşatılmış (Smoothed Sliding Window + EMA) Hız ve ETA hesaplayıcı
@@ -262,6 +288,9 @@ class Migrator extends EventEmitter {
           }
           this.checkpoint.record(item.fullPath, item.size, 'DUPLICATE', '', 'Paralel kopya atlandı');
           this.log('SKIP', `Paralel kopya tespit edildi, ağ harcanmadan atlandı: ${item.name}`);
+          if (this.organizer && this.organizer.enabled) {
+            await this.organizer.organize(item, 'duplicates');
+          }
           this.emit('progress', this.stats);
           continue;
         }
@@ -312,16 +341,25 @@ class Migrator extends EventEmitter {
             this.stats.duplicateCount++;
             this.checkpoint.record(item.fullPath, item.size, 'DUPLICATE', result.id);
             this.log('SKIP', `Zaten mevcut: ${item.name}`);
+            if (this.organizer && this.organizer.enabled) {
+              await this.organizer.organize(item, 'duplicates');
+            }
           } else {
             this.stats.successCount++;
             this.checkpoint.record(item.fullPath, item.size, 'SUCCESS', result.id);
             const liveTag = item.isLivePhoto ? ` (Live Photo 📸+🎥)` : '';
             this.log('SUCCESS', `Yüklendi${liveTag}: ${item.name} (${(item.size / (1024 * 1024)).toFixed(2)} MB)`);
+            if (this.organizer && this.organizer.enabled) {
+              await this.organizer.organize(item, 'uploaded');
+            }
           }
         } else {
           this.stats.errorCount++;
           this.checkpoint.record(item.fullPath, item.size, 'ERROR', '', result.error);
           this.log('ERROR', `Hata: ${item.name} - ${result.error}`);
+          if (this.organizer && this.organizer.enabled) {
+            await this.organizer.organize(item, 'errors', result.error);
+          }
         }
 
         this.emit('progress', this.stats);

@@ -64,8 +64,17 @@ class ArchiveScanner {
       }
 
       for (const entry of entries) {
-        // Gizli sistem dosyalarını atla
-        if (entry.name.startsWith('.') || entry.name === '__MACOSX') continue;
+        // Gizli sistem dosyalarını ve ayrıştırılmış/organize çıktı klasörlerini atla
+        const nameLower = entry.name.toLowerCase();
+        if (
+          entry.name.startsWith('.') ||
+          entry.name === '__MACOSX' ||
+          nameLower === 'immich_organized' ||
+          nameLower === 'immich_sorted' ||
+          nameLower === 'uploaded' ||
+          nameLower === 'duplicates' ||
+          nameLower === 'errors'
+        ) continue;
 
         const fullPath = path.join(currentDir, entry.name);
         if (entry.isDirectory()) {
