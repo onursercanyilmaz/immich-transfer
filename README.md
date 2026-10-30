@@ -1,10 +1,10 @@
 <div align="center">
 
-  <img src="assets/logo.svg" alt="Immich Google Takeout Migrator Logo" width="160" height="160" />
+  <img src="assets/logo.svg" alt="Immich Transfer Logo" width="160" height="160" />
 
-  # Immich Google Takeout Migrator
+  # Immich Transfer
 
-  **Effortless, resilient, and ultra-fast web-based migration tool for importing massive Google Takeout archives (120 GB+) into your self-hosted Immich instance.**
+  **Effortless, resilient, and ultra-fast web-based migration tool for importing massive photo and video archives (Google Takeout, Apple iCloud, external hard drives, etc.) into your self-hosted Immich instance.**
 
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
   [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?style=flat-square&logo=docker&logoColor=white)](docker-compose.yml)
@@ -35,7 +35,7 @@ Migrating 100+ GB of Google Photos exports is notoriously frustrating:
 * **Interrupted Uploads:** If your terminal, computer, or Wi-Fi crashes 4 hours into a 120 GB transfer, standard scripts start over from scratch or waste gigabytes uploading duplicates.
 * **Command-Line Fatigue:** Not everyone wants to mess around with Python virtual environments, missing libraries, or complex CLI parameters.
 
-**Immich Takeout Migrator** solves this once and for all: it provides a **single-command Docker deployment**, an **interactive web dashboard**, multi-threaded speed, an **interactive folder browser**, and **crash-proof `fsync` persistence**.
+**Immich Transfer** solves this once and for all: it provides a **single-command Docker deployment**, an **interactive web dashboard**, multi-threaded speed, an **interactive folder browser**, and **crash-proof `fsync` persistence**. Works seamlessly with Google Takeout, Apple iCloud, and local camera backups.
 
 ---
 
@@ -59,12 +59,12 @@ Migrating 100+ GB of Google Photos exports is notoriously frustrating:
 
 ```mermaid
 flowchart LR
-    subgraph Takeout["📂 Google Takeout Archive"]
-        Media["📷 Media (.jpg, .mp4, .heic)"]
-        Json["📝 Sidecar (.json)"]
+    subgraph Takeout["📂 Media Archive (Takeout, iCloud, HDD)"]
+        Media["📷 Media (.jpg, .mp4, .heic, etc.)"]
+        Json["📝 Sidecars (.json / EXIF)"]
     end
 
-    subgraph Migrator["🚀 Immich Takeout Migrator"]
+    subgraph Migrator["🚀 Immich Transfer"]
         Scanner["Scanner & Matcher"]
         WorkerPool["⚡ Concurrency Pool (1-10)"]
         Checkpoint["💾 fsync Checkpoint"]
@@ -209,9 +209,10 @@ npm test
 
 ## 🇹🇷 Türkçe
 
-Google Takeout ile indirilen devasa fotoğraf ve video arşivlerini (120 GB+) self-hosted **Immich** sunucunuza kolayca, güvenle ve maksimum hızla aktaran modern, Docker destekli web aracıdır.
+Fotoğraf ve video arşivlerinizi (Google Takeout, Apple iCloud, harici disk veya yerel yedekler) self-hosted **Immich** sunucunuza kolayca, güvenle ve maksimum hızla aktaran modern, Docker destekli evrensel web aracıdır.
 
 - **Tek Tıkla Docker Kurulumu:** `docker compose up -d` komutuyla anında ayağa kalkar.
+- **Evrensel Arşiv Desteği:** Google Takeout, Apple iCloud Photos, kamera ve harici disk yedeklerini doğrudan tanır.
 - **İnteraktif Klasör Gezgini (Gözat):** Klasör yolunu ister elle yazın, ister "Gözat" penceresiyle tıklayarak seçin.
 - **Paralel Yükleme:** Ağ hızınızı tam kapasite kullanan çoklu iş parçacığı (1–10 thread).
 - **Kapanma Koruması (`fsync`):** Bilgisayar kapansa bile kaldığı dosyadan anında devam eder.

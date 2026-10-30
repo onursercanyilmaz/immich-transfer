@@ -1,7 +1,7 @@
 {
   "name": "immich-transfer",
   "version": "1.0.0",
-  "description": "Dockerized Google Takeout to Immich Migrator with Web UI",
+  "description": "Universal Photo and Media Archive Migrator for Immich with Web UI & Docker",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
