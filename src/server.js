@@ -257,13 +257,18 @@ app.get('/api/status', (req, res) => {
 app.post('/api/cloud-stream/validate', async (req, res) => {
   try {
     const { curlOrUrl } = req.body;
+    console.log('[/api/cloud-stream/validate] Gelen girdi uzunluğu:', curlOrUrl?.length);
+    console.log('[/api/cloud-stream/validate] İlk 200 karakter:', curlOrUrl?.substring(0, 200));
+
     if (!curlOrUrl || !curlOrUrl.trim()) {
       return res.status(400).json({ success: false, error: 'Lütfen cURL komutu veya indirme bağlantısı girin.' });
     }
 
     const validatedInfo = await CloudTakeoutStreamer.validateLink(curlOrUrl);
+    console.log('[/api/cloud-stream/validate] Sonuç:', validatedInfo);
     res.json({ success: true, info: validatedInfo });
   } catch (err) {
+    console.error('[/api/cloud-stream/validate] Hata:', err.message);
     res.status(400).json({ success: false, error: err.message });
   }
 });

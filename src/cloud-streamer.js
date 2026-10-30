@@ -20,22 +20,50 @@ class CloudTakeoutStreamer {
    */
   static async validateLink(curlOrUrl) {
     const config = CurlParser.parse(curlOrUrl);
+    console.log('[CloudTakeoutStreamer] Hedef URL:', config.url);
+    console.log('[CloudTakeoutStreamer] Header Anahtarları:', Object.keys(config.headers));
 
     try {
       // 1 baytlık Range isteği ile bağlantıyı, çerezleri ve dosya boyutunu test et
-      const res = await axios.get(config.url, {
+      let res = await axios.get(config.url, {
         headers: {
           ...config.headers,
           'Range': 'bytes=0-0'
         },
         maxRedirects: 10,
         beforeRedirect: (options) => {
-          // Cross-domain yönlendirmede Google oturum çerezlerini koru
+          // Cross-domain yönlendirmede Google oturum çerezlerini ve Range başlığını koru
           if (config.headers['Cookie']) options.headers['Cookie'] = config.headers['Cookie'];
           if (config.headers['cookie']) options.headers['cookie'] = config.headers['cookie'];
+          options.headers['Range'] = 'bytes=0-0';
         },
         validateStatus: status => (status >= 200 && status < 400)
       });
+
+      let finalUrl = res.request?.res?.responseUrl || config.url;
+
+      // Eğer yönlendirme (redirect) gerçekleştiyse ve ilk yanıt 206 dönmediyse, asıl hedefe doğrudan Range at
+      if (finalUrl !== config.url && res.status !== 206) {
+        try {
+          const directRes = await axios.get(finalUrl, {
+            headers: {
+              ...config.headers,
+              'Range': 'bytes=0-0'
+            },
+            maxRedirects: 5,
+            validateStatus: s => s < 400
+          });
+          if (directRes.status === 206 || directRes.headers['content-range'] || directRes.headers['accept-ranges']) {
+            res = directRes;
+          }
+        } catch (_) {}
+      }
+
+      console.log('[CloudTakeoutStreamer] Yanıt Status:', res.status);
+      console.log('[CloudTakeoutStreamer] Yanıt Content-Type:', res.headers['content-type']);
+      console.log('[CloudTakeoutStreamer] Yanıt Content-Range:', res.headers['content-range']);
+      console.log('[CloudTakeoutStreamer] Yanıt Content-Length:', res.headers['content-length']);
+      console.log('[CloudTakeoutStreamer] Yanıt Final URL:', res.request?.res?.responseUrl || config.url);
 
       const contentType = (res.headers['content-type'] || '').toLowerCase();
 
@@ -60,7 +88,8 @@ class CloudTakeoutStreamer {
         totalSize = parseInt(res.headers['content-length'], 10);
       }
 
-      const supportsRange = res.status === 206 || res.headers['accept-ranges'] === 'bytes' || !!contentRange;
+      const acceptRanges = (res.headers['accept-ranges'] || '').toLowerCase();
+      const supportsRange = res.status === 206 || acceptRanges.includes('bytes') || !!contentRange;
 
       if (!totalSize || totalSize <= 0) {
         throw new Error(
