@@ -91,6 +91,55 @@ app.post('/api/scan', async (req, res) => {
   }
 });
 
+// API: Dizin Gezgini (Klasör Gözat / Browse)
+app.get('/api/browse', (req, res) => {
+  try {
+    let queryPath = req.query.path;
+    let targetDir;
+
+    if (queryPath) {
+      targetDir = path.resolve(queryPath);
+    } else if (fs.existsSync(DEFAULT_TAKEOUT)) {
+      targetDir = DEFAULT_TAKEOUT;
+    } else {
+      targetDir = process.env.HOME || process.cwd();
+    }
+
+    if (!fs.existsSync(targetDir)) {
+      targetDir = process.cwd();
+    }
+
+    const stat = fs.statSync(targetDir);
+    if (!stat.isDirectory()) {
+      targetDir = path.dirname(targetDir);
+    }
+
+    const entries = fs.readdirSync(targetDir, { withFileTypes: true });
+    const directories = [];
+
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith('.')) {
+        directories.push({
+          name: entry.name,
+          path: path.join(targetDir, entry.name)
+        });
+      }
+    }
+
+    directories.sort((a, b) => a.name.localeCompare(b.name));
+
+    const parent = path.dirname(targetDir);
+    res.json({
+      success: true,
+      current: targetDir,
+      parent: parent !== targetDir ? parent : null,
+      directories
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // API: Aktarımı Başlat
 app.post('/api/start', (req, res) => {
   try {

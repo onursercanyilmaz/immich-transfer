@@ -249,4 +249,17 @@ describe('Immich Google Takeout Migrator Test Suite', () => {
     assert.equal(secondScan.alreadyUploaded, 4, '4 dosya da artık checkpointte bulunmalı');
     assert.equal(secondScan.pendingFiles, 0, 'Yüklenecek yeni dosya kalmamış olmalı');
   });
+
+  // TEST 5: Dizin Gezgini (Folder Browser) Testi
+  test('5. Folder Browser: Dizin listeleme ve gezinti', () => {
+    const subFolder = path.join(TEST_TAKEOUT_DIR, 'SubAlbum2023');
+    fs.mkdirSync(subFolder, { recursive: true });
+
+    const entries = fs.readdirSync(TEST_TAKEOUT_DIR, { withFileTypes: true });
+    const directories = entries
+      .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+      .map(e => e.name);
+
+    assert.ok(directories.includes('SubAlbum2023'), 'Alt albüm klasörü listede bulunmalı');
+  });
 });

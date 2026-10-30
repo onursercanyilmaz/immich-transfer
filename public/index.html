@@ -23,7 +23,7 @@
     }
   </script>
   <style>
-    /* Custom scrollbar for log viewer */
+    /* Custom scrollbar for log viewer and folder browser */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #18181b; }
     ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
@@ -151,11 +151,19 @@
                 class="w-full bg-zinc-950 border border-zinc-800 focus:border-brand-500 rounded-xl px-3.5 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition">
             </div>
 
+            <!-- Takeout Folder with Browse Button -->
             <div>
               <label id="t_lblTakeoutDir" class="block text-xs font-medium text-zinc-400 mb-1">Google Takeout Klasörü</label>
-              <input id="inputTakeoutDir" type="text" placeholder="/takeout"
-                class="w-full bg-zinc-950 border border-zinc-800 focus:border-brand-500 rounded-xl px-3.5 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition">
-              <p id="t_takeoutHint" class="text-[11px] text-zinc-500 mt-1">Docker içinde varsayılan: <code class="text-zinc-400">/takeout</code></p>
+              <div class="flex gap-2">
+                <input id="inputTakeoutDir" type="text" placeholder="/takeout"
+                  class="flex-1 bg-zinc-950 border border-zinc-800 focus:border-brand-500 rounded-xl px-3.5 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition">
+                <button type="button" onclick="openFolderBrowser()"
+                  class="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium rounded-xl border border-zinc-700 transition flex items-center gap-1.5 whitespace-nowrap">
+                  <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                  <span id="t_btnBrowse">Gözat</span>
+                </button>
+              </div>
+              <p id="t_takeoutHint" class="text-[11px] text-zinc-500 mt-1">Yazabilir veya Gözat butonuyla seçebilirsiniz (Docker: <code class="text-zinc-400">/takeout</code>)</p>
             </div>
 
             <div>
@@ -280,6 +288,47 @@
     </div>
   </main>
 
+  <!-- Folder Browser Modal -->
+  <div id="folderModal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-zinc-800 w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+      <!-- Modal Header -->
+      <div class="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-950">
+        <div class="flex items-center space-x-2">
+          <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+          <h3 id="t_browseModalTitle" class="text-sm font-semibold text-zinc-100">Klasör Seçici</h3>
+        </div>
+        <button onclick="closeFolderBrowser()" class="text-zinc-400 hover:text-zinc-100 p-1 rounded-lg hover:bg-zinc-800 transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Current Path Bar -->
+      <div class="px-4 py-2.5 bg-zinc-900 border-b border-zinc-800 flex items-center space-x-2 text-xs">
+        <button id="btnParentDir" onclick="navigateParent()" class="p-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-30 disabled:pointer-events-none transition" title="Üst Dizin">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>
+        </button>
+        <span class="text-zinc-500 font-mono">Dizin:</span>
+        <span id="browserCurrentPath" class="font-mono text-zinc-200 truncate flex-1 font-semibold select-all">/</span>
+      </div>
+
+      <!-- Directory List -->
+      <div id="browserList" class="p-2 overflow-y-auto flex-1 space-y-1 text-xs font-medium min-h-[250px]">
+        <!-- Dynamic folders injected here -->
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-4 border-t border-zinc-800 bg-zinc-950 flex items-center justify-between">
+        <button onclick="closeFolderBrowser()" class="px-4 py-2 rounded-xl text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition">
+          <span id="t_btnCancel">Vazgeç</span>
+        </button>
+        <button onclick="selectCurrentFolder()" class="px-5 py-2 rounded-xl text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white transition flex items-center gap-1.5 shadow-lg shadow-brand-600/20">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+          <span id="t_btnSelectFolder">Bu Klasörü Seç</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <footer id="t_footerText" class="border-t border-zinc-800/80 py-4 text-center text-xs text-zinc-600">
     Immich Google Takeout Migrator • Dockerized Web Edition • Güvenli, Dayanıklı ve Açık Kaynak
   </footer>
@@ -313,7 +362,8 @@
         lblImmichUrl: "Immich Sunucu URL",
         lblApiKey: "Immich API Anahtarı (API Key)",
         lblTakeoutDir: "Google Takeout Klasörü",
-        takeoutHint: "Docker içinde varsayılan: /takeout",
+        btnBrowse: "Gözat",
+        takeoutHint: "Yazabilir veya Gözat butonuyla seçebilirsiniz (Docker: /takeout)",
         lblConcurrency: "Eşzamanlı Yükleme (Concurrency)",
         btnTestConn: "Bağlantıyı ve Hesabı Doğrula",
         btnTesting: "Doğrulanıyor...",
@@ -336,7 +386,11 @@
         footerText: "Immich Google Takeout Migrator • Dockerized Web Edition • Güvenli, Dayanıklı ve Açık Kaynak",
         alertMissingFields: "Lütfen Immich URL ve API Key giriniz.",
         confirmStop: "Aktarımı durdurmak istediğinize emin misiniz? (İstediğiniz zaman kaldığı yerden devam ettirebilirsiniz)",
-        fileUnit: "dosya"
+        fileUnit: "dosya",
+        browseModalTitle: "Klasör Seçici",
+        btnCancel: "Vazgeç",
+        btnSelectFolder: "Bu Klasörü Seç",
+        noSubfolders: "Bu klasör altında başka alt klasör bulunamadı."
       },
       en: {
         headerSubtitle: "Google Photos & Takeout Web Migration Tool",
@@ -361,7 +415,8 @@
         lblImmichUrl: "Immich Server URL",
         lblApiKey: "Immich API Key",
         lblTakeoutDir: "Google Takeout Folder",
-        takeoutHint: "Default inside Docker: /takeout",
+        btnBrowse: "Browse",
+        takeoutHint: "Type path or click Browse (Docker: /takeout)",
         lblConcurrency: "Concurrency (Workers)",
         btnTestConn: "Verify Connection & Account",
         btnTesting: "Verifying...",
@@ -384,7 +439,11 @@
         footerText: "Immich Google Takeout Migrator • Dockerized Web Edition • Secure, Resilient & Open Source",
         alertMissingFields: "Please enter Immich URL and API Key.",
         confirmStop: "Are you sure you want to stop the migration? (You can resume anytime from where it left off)",
-        fileUnit: "files"
+        fileUnit: "files",
+        browseModalTitle: "Folder Browser",
+        btnCancel: "Cancel",
+        btnSelectFolder: "Select This Folder",
+        noSubfolders: "No subdirectories found in this folder."
       }
     };
 
@@ -392,13 +451,14 @@
     let currentState = 'IDLE';
     let isPaused = false;
     let latestStats = null;
+    let browserCurrentDir = '/';
+    let browserParentDir = null;
 
     function setLanguage(lang) {
       currentLang = lang;
       localStorage.setItem('immich_migrator_lang', lang);
       document.documentElement.lang = lang;
 
-      // Update switcher buttons UI
       const trBtn = document.getElementById('langBtnTr');
       const enBtn = document.getElementById('langBtnEn');
       if (lang === 'tr') {
@@ -431,7 +491,8 @@
       document.getElementById('t_lblImmichUrl').textContent = t.lblImmichUrl;
       document.getElementById('t_lblApiKey').textContent = t.lblApiKey;
       document.getElementById('t_lblTakeoutDir').textContent = t.lblTakeoutDir;
-      document.getElementById('t_takeoutHint').innerHTML = `${t.takeoutHint} <code class="text-zinc-400">/takeout</code>`;
+      document.getElementById('t_btnBrowse').textContent = t.btnBrowse;
+      document.getElementById('t_takeoutHint').innerHTML = t.takeoutHint;
       document.getElementById('t_lblConcurrency').textContent = t.lblConcurrency;
       document.getElementById('t_btnTestConn').textContent = t.btnTestConn;
 
@@ -451,6 +512,10 @@
       document.getElementById('t_autoScroll').textContent = t.autoScroll;
       document.getElementById('t_clearBtn').textContent = t.clearBtn;
       document.getElementById('t_footerText').textContent = t.footerText;
+
+      document.getElementById('t_browseModalTitle').textContent = t.browseModalTitle;
+      document.getElementById('t_btnCancel').textContent = t.btnCancel;
+      document.getElementById('t_btnSelectFolder').textContent = t.btnSelectFolder;
 
       const initMsg = document.getElementById('consoleInitialMsg');
       if (initMsg) initMsg.textContent = t.initialConsoleMsg;
@@ -509,6 +574,77 @@
       return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
+    // -------------------------------------------------------------
+    // FOLDER BROWSER MODAL LOGIC
+    // -------------------------------------------------------------
+    async function openFolderBrowser() {
+      const currentVal = document.getElementById('inputTakeoutDir').value.trim();
+      document.getElementById('folderModal').classList.remove('hidden');
+      await loadBrowserDir(currentVal || '');
+    }
+
+    function closeFolderBrowser() {
+      document.getElementById('folderModal').classList.add('hidden');
+    }
+
+    async function loadBrowserDir(pathQuery) {
+      const listEl = document.getElementById('browserList');
+      const t = I18N[currentLang];
+      listEl.innerHTML = `<div class="p-4 text-center text-zinc-500">${t.btnScanning}</div>`;
+
+      try {
+        const url = pathQuery ? `/api/browse?path=${encodeURIComponent(pathQuery)}` : '/api/browse';
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.success) {
+          browserCurrentDir = data.current;
+          browserParentDir = data.parent;
+
+          document.getElementById('browserCurrentPath').textContent = data.current;
+          document.getElementById('btnParentDir').disabled = !data.parent;
+
+          listEl.innerHTML = '';
+
+          if (data.directories.length === 0) {
+            listEl.innerHTML = `<div class="p-6 text-center text-zinc-500">${t.noSubfolders}</div>`;
+            return;
+          }
+
+          data.directories.forEach(dir => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'w-full text-left p-2.5 rounded-xl hover:bg-zinc-800 text-zinc-200 transition flex items-center space-x-2.5 group';
+            btn.innerHTML = `
+              <svg class="w-4 h-4 text-amber-400 group-hover:scale-110 transition shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+              <span class="truncate flex-1 font-mono">${escapeHtml(dir.name)}</span>
+              <svg class="w-3.5 h-3.5 text-zinc-600 group-hover:text-zinc-300 transition shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            `;
+            btn.onclick = () => loadBrowserDir(dir.path);
+            listEl.appendChild(btn);
+          });
+        } else {
+          listEl.innerHTML = `<div class="p-4 text-center text-rose-400">Hata: ${data.error}</div>`;
+        }
+      } catch (err) {
+        listEl.innerHTML = `<div class="p-4 text-center text-rose-400">Hata: ${err.message}</div>`;
+      }
+    }
+
+    function navigateParent() {
+      if (browserParentDir) {
+        loadBrowserDir(browserParentDir);
+      }
+    }
+
+    function selectCurrentFolder() {
+      document.getElementById('inputTakeoutDir').value = browserCurrentDir;
+      closeFolderBrowser();
+    }
+
+    // -------------------------------------------------------------
+    // PROGRESS & STATUS LOGIC
+    // -------------------------------------------------------------
     function updateStateBadge(state) {
       currentState = state;
       const t = I18N[currentLang];
@@ -581,7 +717,9 @@
       document.getElementById('metricError').textContent = (stats.errorCount || 0).toLocaleString();
     }
 
-    // API Calls
+    // -------------------------------------------------------------
+    // API ACTIONS
+    // -------------------------------------------------------------
     async function testConnection() {
       const immichUrl = document.getElementById('inputImmichUrl').value.trim();
       const apiKey = document.getElementById('inputApiKey').value.trim();
@@ -705,7 +843,6 @@
       }
     }
 
-    // Connect to Server-Sent Events (SSE) stream
     function initSSE() {
       const eventSource = new EventSource('/api/events');
 
