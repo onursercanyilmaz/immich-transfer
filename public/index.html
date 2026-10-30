@@ -948,8 +948,9 @@
         document.getElementById('metricEta').textContent = '--:--:--';
       }
 
+      const effectiveTotal = Math.max(stats.totalBytes || 0, stats.uploadedBytes || 0);
       document.getElementById('metricUploadedGb').textContent = formatBytes(stats.uploadedBytes);
-      document.getElementById('metricTotalGb').textContent = `/ ${formatBytes(stats.totalBytes)}`;
+      document.getElementById('metricTotalGb').textContent = stats.totalBytes > 0 ? `/ ${formatBytes(effectiveTotal)}` : '';
 
       document.getElementById('metricSuccess').textContent = (stats.successCount || 0).toLocaleString();
       document.getElementById('metricDuplicate').textContent = (stats.duplicateCount || 0).toLocaleString();
