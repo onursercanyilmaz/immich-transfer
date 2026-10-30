@@ -386,7 +386,7 @@
         <button id="btnParentDir" onclick="navigateParent()" class="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-30 disabled:pointer-events-none transition shrink-0" title="Üst Dizin">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>
         </button>
-        <span class="text-zinc-500 font-mono text-[11px] shrink-0">Dizin:</span>
+        <span id="t_lblBrowserPath" class="text-zinc-500 font-mono text-[11px] shrink-0">Dizin:</span>
         <span id="browserCurrentPath" class="font-mono text-zinc-200 truncate flex-1 font-semibold select-all bg-zinc-950/80 px-2 py-1 rounded-md border border-zinc-800">/</span>
       </div>
 
@@ -474,10 +474,21 @@
         alertMissingFields: "Lütfen Immich URL ve API Key giriniz.",
         confirmStop: "Aktarımı durdurmak istediğinize emin misiniz? (İstediğiniz zaman kaldığı yerden devam ettirebilirsiniz)",
         fileUnit: "dosya",
+        workerUnit: "Thread",
         browseModalTitle: "Klasör Seçici",
+        lblBrowserPath: "Dizin:",
+        parentDir: "Üst Dizin",
+        modalLoading: "Dizin yükleniyor...",
         btnCancel: "Vazgeç",
         btnSelectFolder: "Bu Klasörü Seç",
-        noSubfolders: "Bu klasör altında başka alt klasör bulunamadı."
+        noSubfolders: "Bu klasör altında başka alt klasör bulunamadı.",
+        errorPrefix: "Hata",
+        logConnected: "Bağlantı kuruldu",
+        logAuthError: "Kimlik doğrulama hatası",
+        alertConnFailed: "Bağlantı başarısız",
+        alertScanError: "Tarama hatası",
+        alertScanFailed: "Tarama başarısız",
+        alertStartFailed: "Aktarım başlatılamadı"
       },
       en: {
         headerSubtitle: "Universal Photo & Media Migration Tool",
@@ -538,10 +549,21 @@
         alertMissingFields: "Please enter Immich URL and API Key.",
         confirmStop: "Are you sure you want to stop the migration? (You can resume anytime from where it left off)",
         fileUnit: "files",
+        workerUnit: "Workers",
         browseModalTitle: "Folder Browser",
+        lblBrowserPath: "Path:",
+        parentDir: "Parent Directory",
+        modalLoading: "Loading directory...",
         btnCancel: "Cancel",
         btnSelectFolder: "Select This Folder",
-        noSubfolders: "No subdirectories found in this folder."
+        noSubfolders: "No subdirectories found in this folder.",
+        errorPrefix: "Error",
+        logConnected: "Connected",
+        logAuthError: "Authentication error",
+        alertConnFailed: "Connection failed",
+        alertScanError: "Scan error",
+        alertScanFailed: "Scan failed",
+        alertStartFailed: "Failed to start transfer"
       }
     };
 
@@ -622,21 +644,36 @@
       document.getElementById('t_footerText').textContent = t.footerText;
 
       document.getElementById('t_browseModalTitle').textContent = t.browseModalTitle;
+      document.getElementById('t_lblBrowserPath').textContent = t.lblBrowserPath;
+      document.getElementById('btnParentDir').title = t.parentDir;
       document.getElementById('t_btnCancel').textContent = t.btnCancel;
       document.getElementById('t_btnSelectFolder').textContent = t.btnSelectFolder;
 
       const initMsg = document.getElementById('consoleInitialMsg');
       if (initMsg) initMsg.textContent = t.initialConsoleMsg;
 
+      const concurrencySlider = document.getElementById('inputConcurrency');
+      const concurrencyVal = document.getElementById('concurrencyValue');
+      if (concurrencySlider && concurrencyVal) {
+        concurrencyVal.textContent = `${concurrencySlider.value} ${t.workerUnit}`;
+      }
+
       updateStateBadge(currentState);
-      if (latestStats) updateMetrics(latestStats);
+      if (latestStats) {
+        updateMetrics(latestStats);
+      } else {
+        document.getElementById('metricFileCount').textContent = `0 / 0 ${t.fileUnit}`;
+        document.getElementById('scanTotalFound').textContent = `0 ${t.fileUnit}`;
+        document.getElementById('scanAlreadyUploaded').textContent = `0 ${t.fileUnit}`;
+        document.getElementById('scanPending').textContent = `0 ${t.fileUnit}`;
+      }
     }
 
     // Concurrency slider sync
     const concurrencySlider = document.getElementById('inputConcurrency');
     const concurrencyVal = document.getElementById('concurrencyValue');
     concurrencySlider.addEventListener('input', (e) => {
-      concurrencyVal.textContent = `${e.target.value} ${currentLang === 'tr' ? 'Thread' : 'Workers'}`;
+      concurrencyVal.textContent = `${e.target.value} ${I18N[currentLang].workerUnit}`;
     });
 
     function formatBytes(bytes) {
@@ -698,7 +735,7 @@
     async function loadBrowserDir(pathQuery) {
       const listEl = document.getElementById('browserList');
       const t = I18N[currentLang];
-      listEl.innerHTML = `<div class="p-6 text-center text-zinc-500">${t.btnScanning}</div>`;
+      listEl.innerHTML = `<div class="p-6 text-center text-zinc-500">${t.modalLoading}</div>`;
 
       try {
         const url = pathQuery ? `/api/browse?path=${encodeURIComponent(pathQuery)}` : '/api/browse';
@@ -732,10 +769,10 @@
             listEl.appendChild(btn);
           });
         } else {
-          listEl.innerHTML = `<div class="p-6 text-center text-rose-400">Hata: ${data.error}</div>`;
+          listEl.innerHTML = `<div class="p-6 text-center text-rose-400">${t.errorPrefix}: ${escapeHtml(data.error)}</div>`;
         }
       } catch (err) {
-        listEl.innerHTML = `<div class="p-6 text-center text-rose-400">Hata: ${err.message}</div>`;
+        listEl.innerHTML = `<div class="p-6 text-center text-rose-400">${t.errorPrefix}: ${escapeHtml(err.message)}</div>`;
       }
     }
 
@@ -869,13 +906,13 @@
           card.classList.remove('hidden');
           document.getElementById('verifiedUserName').textContent = data.user.name || 'User';
           document.getElementById('verifiedUserEmail').textContent = data.user.email || 'No email';
-          appendLog({ timestamp: new Date().toLocaleTimeString(), level: 'SUCCESS', message: `Connected: ${data.user.name} (${data.user.email})` });
+          appendLog({ timestamp: new Date().toLocaleTimeString(), level: 'SUCCESS', message: `${t.logConnected}: ${data.user.name} (${data.user.email})` });
         } else {
-          alert('Error: ' + data.error);
-          appendLog({ timestamp: new Date().toLocaleTimeString(), level: 'ERROR', message: `Auth error: ${data.error}` });
+          alert(`${t.errorPrefix}: ${data.error}`);
+          appendLog({ timestamp: new Date().toLocaleTimeString(), level: 'ERROR', message: `${t.logAuthError}: ${data.error}` });
         }
       } catch (err) {
-        alert('Connection failed: ' + err.message);
+        alert(`${t.alertConnFailed}: ${err.message}`);
       } finally {
         btn.disabled = false;
         btn.innerHTML = `<svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> <span>${t.btnTestConn}</span>`;
@@ -920,10 +957,10 @@
           updateMetrics(data.stats);
           updateStateBadge('READY');
         } else {
-          alert('Scan Error: ' + data.error);
+          alert(`${t.alertScanError}: ${data.error}`);
         }
       } catch (err) {
-        alert('Scan failed: ' + err.message);
+        alert(`${t.alertScanFailed}: ${err.message}`);
       } finally {
         btn.disabled = false;
         btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg> <span>${t.btnScan}</span>`;
@@ -955,10 +992,10 @@
         if (data.success) {
           updateStateBadge('RUNNING');
         } else {
-          alert('Error: ' + data.error);
+          alert(`${t.errorPrefix}: ${data.error}`);
         }
       } catch (err) {
-        alert('Failed to start: ' + err.message);
+        alert(`${t.alertStartFailed}: ${err.message}`);
       }
     }
 

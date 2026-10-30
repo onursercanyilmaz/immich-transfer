@@ -188,12 +188,16 @@ The repository comes with a zero-external-dependency automated test suite testin
 npm test
 ```
 
-**Test Coverage Summary:**
+**Test Coverage Summary (9/9 Automated Tests):**
 * `TakeoutScanner`: File filtering and edge-case sidecar metadata extraction.
-* `CheckpointManager`: Disk persistence, restart recovery, and error isolation.
+* `CheckpointManager`: Physical `fsync` disk persistence, restart recovery, and error isolation.
 * `ImmichClient`: User authentication verification and multipart asset streaming.
 * `End-to-End Migrator`: Full pipeline execution from scan to 100% completion.
-* `Folder Browser`: Subdirectory navigation and parent traversal.
+* `Folder Browser`: Subdirectory navigation and parent directory traversal.
+* `In-Flight Deduplication`: Prevents identical files across different albums from redundant uploads.
+* `Live Photo Pairing`: Native pairing of `.heic/.jpg` and `.mov/.mp4` into `livePhotoData`.
+* `Streaming ZIP Archive`: Zero-extraction reading and streaming directly from `.zip` files.
+* `Hybrid Directory & Selective Filters`: Dynamic toggle testing for extracted files, zip archives, and motion pairs.
 
 ---
 
@@ -210,20 +214,35 @@ npm test
 
 ---
 
-## 🇹🇷 Türkçe
+## 🇹🇷 Türkçe Açıklama
 
 Fotoğraf ve video arşivlerinizi (Google Takeout, Apple iCloud, harici disk veya yerel yedekler) self-hosted **Immich** sunucunuza kolayca, güvenle ve maksimum hızla aktaran modern, Docker destekli evrensel web aracıdır.
 
-- **Tek Tıkla Docker Kurulumu:** `docker compose up -d` komutuyla anında ayağa kalkar.
-- **Doğrudan ZIP Desteği (Zero-Extraction):** 50 GB'lık Takeout `.zip` arşivlerini dışarı çıkartmadan doğrudan içerisinden okur ve stream eder.
-- **Live / Motion Photo Eşleştirme:** Google ve Apple fotoğraflarındaki `.heic/.jpg` ve `.mov/.mp4` ikililerini tek bir Canlı Fotoğraf (`livePhotoData`) olarak Immich'e bağlar.
-- **Evrensel Arşiv Desteği:** Google Takeout, Apple iCloud Photos, kamera ve harici disk yedeklerini doğrudan tanır.
-- **İnteraktif Klasör Gezgini (Gözat):** Klasör yolunu ister elle yazın, ister "Gözat" penceresiyle tıklayarak seçin.
-- **Paralel Yükleme:** Ağ hızınızı tam kapasite kullanan çoklu iş parçacığı (1–10 thread).
-- **Kapanma Koruması (`fsync`):** Bilgisayar kapansa bile kaldığı dosyadan anında devam eder.
-- **Türkçe & İngilizce Desteği:** Sağ üst köşedeki butonla anında dil değiştirilebilir.
+### 🌟 Öne Çıkan Özellikler
 
-Detaylı Türkçe kullanım adımları için [Hızlı Başlangıç](#-quick-start) bölümünü inceleyebilirsiniz.
+- **Tek Tıkla Docker Kurulumu:** `docker compose up -d` komutuyla anında ayağa kalkar, tarayıcınızdan (`http://localhost:3000`) yönetilir.
+- **Doğrudan ZIP Desteği (Zero-Extraction):** Takeout veya iCloud `.zip` arşivlerini diske açmadan (Zip64 destekli) doğrudan stream akışıyla okur ve yükler. Disk alanından %100 tasarruf sağlar.
+- **Canlı & Hareketli Fotoğraflar (Live Photos):** Google ve Apple fotoğraflarındaki `.heic/.jpg` + `.mov/.mp4` çiftlerini tespit edip tek bir Motion Photo varlığı olarak Immich'in `livePhotoData` alanına bağlar.
+- **Seçici Kaynak Onay Kutuları:** Normal klasörler, ZIP arşivleri ve Live Photo eşleme özelliklerini tek tıkla açıp kapatabilirsiniz.
+- **Görsel Klasör Gezgini (Gözat):** Arşiv yolunu ister elle yazın, ister modern açılır pencere üzerinden tıklayarak seçin.
+- **Akıllı Yan Dosya (.json) Eşleme:** Google Takeout'un bozduğu `foto(1).jpg` $\leftrightarrow$ `foto.jpg(1).json` parantezli kopyalarını ve 46 karakter üzeri kırpılmış JSON dosyalarını hatasız eşler.
+- **In-Flight Mükerrer Engeli (Deduplication):** Aynı anda yüklenen veya farklı klasörlerde tekrarlanan aynı dosyaları tespit edip gereksiz ağ trafiği harcamadan atlar.
+- **Fiziksel `fsync` Kesinti Koruması:** Her başarılı yüklemede durum anında diske senkronize edilir. Bilgisayar veya elektrik kapansa bile kaldığı yerden devam eder.
+- **Çift Dil Desteği:** Sağ üst köşedeki butonla anında **Türkçe** veya **İngilizce** arasında geçiş yapılabilir (tercihiniz tarayıcıda saklanır).
+
+### 🚀 Hızlı Başlangıç (Docker ile)
+
+1. Depoyu klonlayın ve klasöre girin:
+   ```bash
+   git clone https://github.com/your-username/immich-transfer.git
+   cd immich-transfer
+   ```
+2. `docker-compose.yml` dosyasında arşiv klasörünüzün yolunu belirleyin.
+3. Servisi başlatın:
+   ```bash
+   docker compose up -d
+   ```
+4. Tarayıcınızda `http://localhost:3000` adresine gidin. Immich URL ve API anahtarınızı girerek aktarımı başlatın!
 
 ---
 
