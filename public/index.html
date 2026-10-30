@@ -167,8 +167,23 @@
                 class="w-full h-11 bg-zinc-950/80 border border-zinc-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 rounded-xl px-3.5 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition">
             </div>
 
-            <!-- Archive Folder with Browse Button (Aligned Heights) -->
-            <div>
+            <!-- Source Mode Selection Tabs -->
+            <div class="pt-1">
+              <label class="block text-xs font-medium text-zinc-400 mb-1.5" id="t_lblSourceMode">Aktarım Kaynağı Türü</label>
+              <div class="grid grid-cols-2 p-1 bg-zinc-950/80 rounded-xl border border-zinc-800 text-xs gap-1">
+                <button id="tabModeLocal" type="button" onclick="switchSourceMode('local')"
+                  class="py-2 px-2 rounded-lg font-medium transition flex items-center justify-center gap-1.5 bg-zinc-800 text-white shadow-sm">
+                  <span>📂</span> <span id="t_tabLocal">Yerel Klasör / ZIP</span>
+                </button>
+                <button id="tabModeCloud" type="button" onclick="switchSourceMode('cloud')"
+                  class="py-2 px-2 rounded-lg font-medium transition flex items-center justify-center gap-1.5 text-zinc-400 hover:text-zinc-200">
+                  <span>☁️</span> <span id="t_tabCloud">Takeout Canlı Akış</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- MODE 1: Local Folder / ZIP -->
+            <div id="sectionLocalSource">
               <label id="t_lblTakeoutDir" class="block text-xs font-medium text-zinc-400 mb-1.5">Fotoğraf / Arşiv Klasörü</label>
               <div class="flex gap-2 items-center">
                 <input id="inputTakeoutDir" type="text" placeholder="/path/to/archive"
@@ -180,6 +195,46 @@
                 </button>
               </div>
               <p id="t_takeoutHint" class="text-[11px] text-zinc-500 mt-1.5">Takeout, iCloud veya yerel disk klasörü seçebilirsiniz</p>
+            </div>
+
+            <!-- MODE 2: Cloud Takeout Live Stream (Zero Download Pipe) -->
+            <div id="sectionCloudSource" class="hidden space-y-3">
+              <div class="p-3 bg-indigo-950/30 border border-indigo-800/40 rounded-xl text-xs space-y-1">
+                <div id="t_cloudGuideTitle" class="font-semibold text-indigo-300 flex items-center gap-1.5">
+                  <span>💡</span> 0 Bayt Yerel Disk, 0 Bayt Google Drive Kotası:
+                </div>
+                <div id="t_cloudGuideText" class="text-zinc-400 text-[11px] leading-relaxed">
+                  Google Takeout'ta "E-posta ile indirme bağlantısı gönder" seçeneğini kullanın. Bu yöntem Google Drive kotanızı harcamaz. İndirme butonundan kopyaladığınız bağlantıyı veya "Copy as cURL" komutunu aşağıya yapıştırın.
+                </div>
+              </div>
+
+              <div>
+                <label id="t_lblCloudInput" class="block text-xs font-medium text-zinc-400 mb-1.5">Takeout cURL Komutu veya İndirme Bağlantısı</label>
+                <textarea id="inputCloudCurl" rows="3" placeholder="curl 'https://takeout-download.usercontent.google.com/...' -H 'Cookie: ...' veya doğrudan indirme bağlantısını yapıştırın"
+                  class="w-full bg-zinc-950/80 border border-zinc-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 rounded-xl p-3 text-xs text-zinc-100 placeholder-zinc-600 outline-none transition font-mono resize-none"></textarea>
+              </div>
+
+              <button id="btnValidateCloud" type="button" onclick="validateCloudLink()"
+                class="w-full h-10 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-indigo-600/20 transition flex items-center justify-center gap-2 active:scale-98">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <span id="t_btnValidateCloud">Bağlantıyı ve Arşivi Doğrula</span>
+              </button>
+
+              <!-- Remote Archive Info Card -->
+              <div id="cloudArchiveCard" class="hidden p-3 bg-zinc-950/90 border border-zinc-800 rounded-xl space-y-1.5 text-xs">
+                <div class="flex items-center justify-between font-semibold text-zinc-200">
+                  <span id="t_cloudArchiveVerified" class="text-emerald-400 flex items-center gap-1">✓ Uzak Arşiv Doğrulandı</span>
+                  <span id="cloudArchiveSize" class="text-indigo-400 font-mono">- GB</span>
+                </div>
+                <div class="text-[11px] text-zinc-400 truncate flex items-center justify-between">
+                  <span id="t_cloudArchiveName" class="text-zinc-500">Dosya:</span>
+                  <span id="cloudArchiveFilename" class="text-zinc-300 font-mono truncate max-w-[200px]">-</span>
+                </div>
+                <div class="text-[11px] text-zinc-400 flex items-center justify-between">
+                  <span id="t_cloudArchiveRange" class="text-zinc-500">Canlı Akış:</span>
+                  <span id="cloudArchiveRangeStatus" class="text-emerald-400 font-medium">✓ Destekleniyor (Sıfır Disk Kullanımı)</span>
+                </div>
+              </div>
             </div>
 
             <!-- Concurrency Slider -->
@@ -523,7 +578,25 @@
         alertConnFailed: "Bağlantı başarısız",
         alertScanError: "Tarama hatası",
         alertScanFailed: "Tarama başarısız",
-        alertStartFailed: "Aktarım başlatılamadı"
+        alertStartFailed: "Aktarım başlatılamadı",
+        tabLocal: "Yerel Klasör / ZIP",
+        tabCloud: "Takeout Canlı Akış (0 İndirme)",
+        cloudGuideTitle: "💡 0 Bayt Yerel Disk, 0 Bayt Google Drive Kotası:",
+        cloudGuideText: "Google Takeout'ta 'E-posta ile indirme bağlantısı gönder' seçeneğini kullanın. Bu yöntem Google Drive kotanızı harcamaz. İndirme butonundan kopyaladığınız bağlantıyı veya 'Copy as cURL' komutunu aşağıya yapıştırın.",
+        lblCloudInput: "Takeout cURL Komutu veya İndirme Bağlantısı",
+        placeholderCloudInput: "curl 'https://takeout-download.usercontent.google.com/...' -H 'Cookie: ...' veya doğrudan indirme bağlantısını yapıştırın",
+        btnValidateCloud: "Bağlantıyı ve Arşivi Doğrula",
+        btnValidatingCloud: "Doğrulanıyor...",
+        cloudArchiveVerified: "Uzak Arşiv Doğrulandı",
+        cloudArchiveName: "Arşiv Adı:",
+        cloudArchiveSize: "Boyut:",
+        cloudArchiveRange: "Canlı Akış:",
+        cloudRangeSupported: "✓ Destekleniyor (Sıfır Disk Kullanımı)",
+        cloudRangeUnsupported: "✕ Range desteklenmiyor",
+        btnScanCloud: "Bulut Arşivini Tara (Bellekte)",
+        btnStartCloudTransfer: "Bulut Canlı Akışını Başlat",
+        alertMissingCloudInput: "Lütfen cURL komutu veya indirme bağlantısı girin.",
+        alertValidateFirst: "Lütfen önce bağlantıyı doğrulayın."
       },
       en: {
         headerSubtitle: "Universal Photo & Media Migration Tool",
@@ -603,7 +676,25 @@
         alertConnFailed: "Connection failed",
         alertScanError: "Scan error",
         alertScanFailed: "Scan failed",
-        alertStartFailed: "Failed to start transfer"
+        alertStartFailed: "Failed to start transfer",
+        tabLocal: "Local Folder / ZIP",
+        tabCloud: "Takeout Live Stream (0 Downloads)",
+        cloudGuideTitle: "💡 0 Bytes Local Disk, 0 Bytes Google Drive Quota:",
+        cloudGuideText: "Use 'Send download link via email' in Google Takeout. This method does not consume your Google Drive storage. Paste the download link or 'Copy as cURL' command below.",
+        lblCloudInput: "Takeout cURL Command or Download Link",
+        placeholderCloudInput: "Paste curl 'https://takeout-download.usercontent.google.com/...' -H 'Cookie: ...' or direct link",
+        btnValidateCloud: "Verify Link & Remote Archive",
+        btnValidatingCloud: "Verifying...",
+        cloudArchiveVerified: "Remote Archive Verified",
+        cloudArchiveName: "Archive Name:",
+        cloudArchiveSize: "Size:",
+        cloudArchiveRange: "Live Streaming:",
+        cloudRangeSupported: "✓ Supported (Zero Disk Usage)",
+        cloudRangeUnsupported: "✕ Range not supported",
+        btnScanCloud: "Scan Remote Archive (In Memory)",
+        btnStartCloudTransfer: "Start Cloud Live Stream",
+        alertMissingCloudInput: "Please enter a cURL command or download link.",
+        alertValidateFirst: "Please verify the link first."
       }
     };
 
@@ -614,6 +705,8 @@
     let latestStats = null;
     let browserCurrentDir = '/';
     let browserParentDir = null;
+    let currentSourceMode = 'local';
+    let validatedCloudArchive = null;
 
     function setLanguage(lang) {
       currentLang = lang;
@@ -647,6 +740,17 @@
       document.getElementById('t_metricSuccess').textContent = t.metricSuccess;
       document.getElementById('t_metricDuplicate').textContent = t.metricDuplicate;
       document.getElementById('t_metricError').textContent = t.metricError;
+
+      document.getElementById('t_tabLocal').textContent = t.tabLocal;
+      document.getElementById('t_tabCloud').textContent = t.tabCloud;
+      if (document.getElementById('t_cloudGuideTitle')) document.getElementById('t_cloudGuideTitle').innerHTML = `<span>💡</span> ${t.cloudGuideTitle}`;
+      if (document.getElementById('t_cloudGuideText')) document.getElementById('t_cloudGuideText').textContent = t.cloudGuideText;
+      if (document.getElementById('t_lblCloudInput')) document.getElementById('t_lblCloudInput').textContent = t.lblCloudInput;
+      if (document.getElementById('inputCloudCurl')) document.getElementById('inputCloudCurl').placeholder = t.placeholderCloudInput;
+      if (document.getElementById('t_btnValidateCloud')) document.getElementById('t_btnValidateCloud').textContent = t.btnValidateCloud;
+      if (document.getElementById('t_cloudArchiveVerified')) document.getElementById('t_cloudArchiveVerified').textContent = `✓ ${t.cloudArchiveVerified}`;
+      if (document.getElementById('t_cloudArchiveName')) document.getElementById('t_cloudArchiveName').textContent = t.cloudArchiveName;
+      if (document.getElementById('t_cloudArchiveRange')) document.getElementById('t_cloudArchiveRange').textContent = t.cloudArchiveRange;
 
       document.getElementById('t_step1Title').textContent = t.step1Title;
       document.getElementById('t_lblImmichUrl').textContent = t.lblImmichUrl;
@@ -1016,12 +1120,136 @@
       }
     }
 
+    function switchSourceMode(mode) {
+      currentSourceMode = mode;
+      const tabLocal = document.getElementById('tabModeLocal');
+      const tabCloud = document.getElementById('tabModeCloud');
+      const secLocal = document.getElementById('sectionLocalSource');
+      const secCloud = document.getElementById('sectionCloudSource');
+      const t = I18N[currentLang];
+
+      if (mode === 'cloud') {
+        tabCloud.className = 'py-2 px-2 rounded-lg font-medium transition flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-sm';
+        tabLocal.className = 'py-2 px-2 rounded-lg font-medium transition flex items-center justify-center gap-1.5 text-zinc-400 hover:text-zinc-200';
+        secLocal.classList.add('hidden');
+        secCloud.classList.remove('hidden');
+        document.getElementById('t_btnScan').textContent = t.btnScanCloud;
+      } else {
+        tabLocal.className = 'py-2 px-2 rounded-lg font-medium transition flex items-center justify-center gap-1.5 bg-zinc-800 text-white shadow-sm';
+        tabCloud.className = 'py-2 px-2 rounded-lg font-medium transition flex items-center justify-center gap-1.5 text-zinc-400 hover:text-zinc-200';
+        secCloud.classList.add('hidden');
+        secLocal.classList.remove('hidden');
+        document.getElementById('t_btnScan').textContent = t.btnScan;
+      }
+    }
+
+    async function validateCloudLink() {
+      const curlOrUrl = document.getElementById('inputCloudCurl').value.trim();
+      const t = I18N[currentLang];
+
+      if (!curlOrUrl) {
+        alert(t.alertMissingCloudInput);
+        return;
+      }
+
+      const btn = document.getElementById('btnValidateCloud');
+      btn.disabled = true;
+      btn.textContent = t.btnValidatingCloud;
+
+      try {
+        const res = await fetch('/api/cloud-stream/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ curlOrUrl })
+        });
+        const data = await res.json();
+
+        if (data.success && data.info) {
+          validatedCloudArchive = data.info;
+          const card = document.getElementById('cloudArchiveCard');
+          card.classList.remove('hidden');
+          document.getElementById('cloudArchiveFilename').textContent = data.info.filename;
+          document.getElementById('cloudArchiveSize').textContent = `${data.info.totalSizeGb} GB`;
+          const rangeStatus = document.getElementById('cloudArchiveRangeStatus');
+          if (data.info.supportsRange) {
+            rangeStatus.textContent = t.cloudRangeSupported;
+            rangeStatus.className = 'text-emerald-400 font-medium';
+          } else {
+            rangeStatus.textContent = t.cloudRangeUnsupported;
+            rangeStatus.className = 'text-amber-400 font-medium';
+          }
+          appendLog({
+            timestamp: new Date().toLocaleTimeString(),
+            level: 'SUCCESS',
+            message: `Takeout bağlantısı doğrulandı: ${data.info.filename} (${data.info.totalSizeGb} GB, HTTP Range: ${data.info.supportsRange ? 'Evet' : 'Hayır'})`
+          });
+        } else {
+          alert(`${t.errorPrefix}: ${data.error}`);
+          appendLog({ timestamp: new Date().toLocaleTimeString(), level: 'ERROR', message: `Doğrulama hatası: ${data.error}` });
+        }
+      } catch (err) {
+        alert(`${t.errorPrefix}: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> <span>${t.btnValidateCloud}</span>`;
+      }
+    }
+
     async function startScan() {
+      const t = I18N[currentLang];
+      const pairLivePhotos = document.getElementById('checkLivePhotos').checked;
+
+      // BULUT CANLI AKIŞ MODU
+      if (currentSourceMode === 'cloud') {
+        if (!validatedCloudArchive) {
+          await validateCloudLink();
+          if (!validatedCloudArchive) return;
+        }
+
+        const btn = document.getElementById('btnScan');
+        btn.disabled = true;
+        btn.textContent = t.btnScanning;
+
+        try {
+          const res = await fetch('/api/cloud-stream/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              validatedInfo: validatedCloudArchive,
+              pairLivePhotos
+            })
+          });
+          const data = await res.json();
+
+          if (data.success) {
+            const box = document.getElementById('scanResultBox');
+            box.classList.remove('hidden');
+            document.getElementById('scanTotalFound').textContent = `${data.stats.totalFiles.toLocaleString()} ${t.fileUnit}`;
+            document.getElementById('scanExtractedCount').textContent = '0';
+            document.getElementById('scanZipCount').textContent = (data.stats.zipCount || 0).toLocaleString();
+            document.getElementById('scanLiveCount').textContent = (data.stats.livePhotoCount || 0).toLocaleString();
+            document.getElementById('scanAlreadyUploaded').textContent = `${data.stats.alreadyUploaded.toLocaleString()} ${t.fileUnit}`;
+            document.getElementById('scanPending').textContent = `${data.stats.pendingFiles.toLocaleString()} ${t.fileUnit}`;
+            document.getElementById('scanPendingGb').textContent = formatBytes(data.stats.totalBytes);
+
+            updateMetrics(data.stats);
+            updateStateBadge('READY');
+          } else {
+            alert(`${t.alertScanError}: ${data.error}`);
+          }
+        } catch (err) {
+          alert(`${t.alertScanFailed}: ${err.message}`);
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg> <span>${t.btnScanCloud}</span>`;
+        }
+        return;
+      }
+
+      // YEREL KLASÖR / ZIP MODU
       const takeoutDir = document.getElementById('inputTakeoutDir').value.trim();
       const scanExtracted = document.getElementById('checkExtracted').checked;
       const scanZips = document.getElementById('checkZips').checked;
-      const pairLivePhotos = document.getElementById('checkLivePhotos').checked;
-      const t = I18N[currentLang];
 
       if (!scanExtracted && !scanZips) {
         alert(t.alertSelectAtLeastOneSource);
@@ -1075,19 +1303,52 @@
     async function startTransfer() {
       const immichUrl = document.getElementById('inputImmichUrl').value.trim();
       const apiKey = document.getElementById('inputApiKey').value.trim();
-      const takeoutDir = document.getElementById('inputTakeoutDir').value.trim();
       const concurrency = document.getElementById('inputConcurrency').value;
-      const scanExtracted = document.getElementById('checkExtracted').checked;
-      const scanZips = document.getElementById('checkZips').checked;
       const pairLivePhotos = document.getElementById('checkLivePhotos').checked;
-      const organizeMedia = document.getElementById('checkOrganize').checked;
-      const organizeAction = document.querySelector('input[name="organizeAction"]:checked')?.value || 'move';
       const t = I18N[currentLang];
 
       if (!immichUrl || !apiKey) {
         alert(t.alertMissingFields);
         return;
       }
+
+      // BULUT CANLI AKIŞ MODU
+      if (currentSourceMode === 'cloud') {
+        if (!validatedCloudArchive) {
+          alert(t.alertValidateFirst);
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/cloud-stream/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              immichUrl,
+              apiKey,
+              validatedInfo: validatedCloudArchive,
+              concurrency,
+              pairLivePhotos
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            updateStateBadge('RUNNING');
+          } else {
+            alert(`${t.errorPrefix}: ${data.error}`);
+          }
+        } catch (err) {
+          alert(`${t.alertStartFailed}: ${err.message}`);
+        }
+        return;
+      }
+
+      // YEREL KLASÖR / ZIP MODU
+      const takeoutDir = document.getElementById('inputTakeoutDir').value.trim();
+      const scanExtracted = document.getElementById('checkExtracted').checked;
+      const scanZips = document.getElementById('checkZips').checked;
+      const organizeMedia = document.getElementById('checkOrganize').checked;
+      const organizeAction = document.querySelector('input[name="organizeAction"]:checked')?.value || 'move';
 
       try {
         const res = await fetch('/api/start', {

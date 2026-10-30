@@ -5,7 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test tests/test-suite.js tests/test-google-drive.js"
+    "test": "node --test tests/test-suite.js tests/test-google-drive.js && node tests/test-cloud-stream.js"
   },
   "dependencies": {
     "axios": "^1.7.2",

@@ -82,6 +82,7 @@ class MediaOrganizer {
    */
   async organize(item, category, errorDetails = null) {
     if (!this.enabled || !this.baseOutputDir) return null;
+    if (item.isCloudStream) return null; // Bulut canlı akış modunda sıfır disk kullanımı için organize atlanır
 
     const categoryDir = path.join(this.baseOutputDir, category);
     if (!fs.existsSync(categoryDir)) {

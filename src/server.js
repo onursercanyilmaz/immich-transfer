@@ -9,6 +9,7 @@ dotenv.config();
 const CheckpointManager = require('./checkpoint');
 const Migrator = require('./migrator');
 const GoogleDriveService = require('./google-drive');
+const CloudTakeoutStreamer = require('./cloud-streamer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -246,6 +247,76 @@ app.get('/api/status', (req, res) => {
     activeWorkers: Array.from(migrator.activeWorkers.values()),
     defaultTakeout: DEFAULT_TAKEOUT
   });
+});
+
+// =======================================================
+// GOOGLE TAKEOUT CANLI AKIŞ (CLOUD STREAM PIPE) ROUTES
+// =======================================================
+
+// Canlı Akış Bağlantısını Doğrula (0 Bayt İndirme)
+app.post('/api/cloud-stream/validate', async (req, res) => {
+  try {
+    const { curlOrUrl } = req.body;
+    if (!curlOrUrl || !curlOrUrl.trim()) {
+      return res.status(400).json({ success: false, error: 'Lütfen cURL komutu veya indirme bağlantısı girin.' });
+    }
+
+    const validatedInfo = await CloudTakeoutStreamer.validateLink(curlOrUrl);
+    res.json({ success: true, info: validatedInfo });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Canlı Akış Arşivini Tara (Bellekte İndirmeden)
+app.post('/api/cloud-stream/scan', async (req, res) => {
+  try {
+    const { validatedInfo, pairLivePhotos } = req.body;
+    if (!validatedInfo || !validatedInfo.finalUrl) {
+      return res.status(400).json({ success: false, error: 'Doğrulanmış arşiv bilgisi eksik.' });
+    }
+
+    const stats = await migrator.scanCloud(validatedInfo, {
+      pairLivePhotos: pairLivePhotos !== false
+    });
+    res.json({ success: true, stats });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Canlı Akış Aktarımını Başlat (0 Bayt Yerel Disk, 0 Bayt Drive Kotası)
+app.post('/api/cloud-stream/start', async (req, res) => {
+  try {
+    const {
+      immichUrl,
+      apiKey,
+      validatedInfo,
+      concurrency,
+      pairLivePhotos
+    } = req.body;
+
+    if (!immichUrl || !apiKey) {
+      return res.status(400).json({ success: false, error: 'Immich URL ve API Key eksik!' });
+    }
+
+    if (!validatedInfo || !validatedInfo.finalUrl) {
+      return res.status(400).json({ success: false, error: 'Doğrulanmış Takeout bağlantısı eksik!' });
+    }
+
+    await migrator.start({
+      immichUrl,
+      apiKey,
+      cloudInfo: validatedInfo,
+      concurrency: concurrency || 4,
+      pairLivePhotos: pairLivePhotos !== false,
+      organizeMedia: false // Bulut akışında yerel dosya olmadığı için organize kapatılır
+    });
+
+    res.json({ success: true, state: migrator.state });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // =======================================================
