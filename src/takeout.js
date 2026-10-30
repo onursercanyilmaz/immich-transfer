@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const yauzl = require('yauzl');
+const exifr = require('exifr');
 
 const IMAGE_EXTENSIONS = new Set([
   '.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif',
@@ -199,7 +200,9 @@ class ArchiveScanner {
               const chunks = [];
               readStream.on('data', chunk => chunks.push(chunk));
               readStream.on('end', () => {
-                jsonSidecars.set(entry.fileName, Buffer.concat(chunks).toString('utf8'));
+                const content = Buffer.concat(chunks).toString('utf8');
+                jsonSidecars.set(entry.fileName, content);
+                jsonSidecars.set(entry.fileName.toLowerCase(), content);
                 zipfile.readEntry();
               });
               readStream.on('error', () => zipfile.readEntry());
@@ -311,21 +314,45 @@ class ArchiveScanner {
     const ext = path.extname(filename);
     const stem = path.basename(filename, ext);
 
-    // 1. file.ext.json
-    const c1 = dir === '.' ? `${filename}.json` : `${dir}/${filename}.json`;
-    if (jsonMap.has(c1)) return jsonMap.get(c1);
+    const candidates = [
+      `${filename}.json`,
+      `${stem}.json`,
+      `${filename}.supplemental-metadata.json`,
+      `${stem}.supplemental-metadata.json`
+    ];
 
-    // 2. file.json
-    const c2 = dir === '.' ? `${stem}.json` : `${dir}/${stem}.json`;
-    if (jsonMap.has(c2)) return jsonMap.get(c2);
-
-    // 3. Parantezli: file(1).jpg -> file.jpg(1).json
     if (stem.includes('(') && stem.endsWith(')')) {
       const idx = stem.lastIndexOf('(');
       const base = stem.substring(0, idx);
       const numPart = stem.substring(idx);
-      const c3 = dir === '.' ? `${base}${ext}${numPart}.json` : `${dir}/${base}${ext}${numPart}.json`;
-      if (jsonMap.has(c3)) return jsonMap.get(c3);
+      candidates.push(`${base}${ext}${numPart}.json`);
+      candidates.push(`${base}${numPart}.json`);
+      candidates.push(`${base}${numPart}${ext}.json`);
+      candidates.push(`${base}${ext}.json${numPart}`);
+    }
+
+    if (stem.toLowerCase().endsWith('-edited') || stem.toLowerCase().endsWith('-düzenlendi')) {
+      const originalStem = stem.replace(/-(?:edited|d[uü]zenlendi)$/i, '');
+      candidates.push(`${originalStem}${ext}.json`);
+      candidates.push(`${originalStem}.json`);
+      candidates.push(`${originalStem}.supplemental-metadata.json`);
+    }
+
+    // 1. Doğrudan ve küçük harf eşleme
+    for (const c of candidates) {
+      const full = dir === '.' ? c : `${dir}/${c}`;
+      if (jsonMap.has(full)) return jsonMap.get(full);
+      if (jsonMap.has(full.toLowerCase())) return jsonMap.get(full.toLowerCase());
+    }
+
+    // 2. Kırpılmış (Truncated) ZIP içi JSON eşleme (>35 karakter)
+    if (stem.length > 35) {
+      const prefix = (dir === '.' ? stem.substring(0, 36) : `${dir}/${stem.substring(0, 36)}`).toLowerCase();
+      for (const [key, content] of jsonMap.entries()) {
+        if (key.startsWith(prefix) && key.endsWith('.json')) {
+          return content;
+        }
+      }
     }
 
     return null;
@@ -371,16 +398,112 @@ class ArchiveScanner {
   }
 
   /**
-   * Medya meta verisini (.json veya EXIF/mtime) parse eder.
+   * ZIP içindeki bir dosyanın başından (EXIF için) ilk maxBytes kadarını okur
    */
-  static parseMetadata(item) {
-    const fallbackIso = (item.mtime || new Date()).toISOString();
-    const result = {
-      createdAt: fallbackIso,
-      modifiedAt: fallbackIso,
-      isFavorite: false,
-      description: ''
-    };
+  static _readZipEntryHeader(zipPath, entryName, maxBytes = 65536) {
+    return new Promise((resolve) => {
+      yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
+        if (err || !zipfile) return resolve(null);
+
+        zipfile.readEntry();
+        zipfile.on('entry', (entry) => {
+          if (entry.fileName === entryName) {
+            zipfile.openReadStream(entry, (err, stream) => {
+              if (err || !stream) {
+                zipfile.close();
+                return resolve(null);
+              }
+              const chunks = [];
+              let total = 0;
+              stream.on('data', (chunk) => {
+                chunks.push(chunk);
+                total += chunk.length;
+                if (total >= maxBytes) {
+                  try { stream.destroy(); } catch (_) {}
+                  try { zipfile.close(); } catch (_) {}
+                  resolve(Buffer.concat(chunks).subarray(0, maxBytes));
+                }
+              });
+              stream.on('end', () => {
+                try { zipfile.close(); } catch (_) {}
+                resolve(Buffer.concat(chunks));
+              });
+              stream.on('error', () => {
+                try { zipfile.close(); } catch (_) {}
+                resolve(null);
+              });
+            });
+          } else {
+            zipfile.readEntry();
+          }
+        });
+
+        zipfile.on('end', () => {
+          try { zipfile.close(); } catch (_) {}
+          resolve(null);
+        });
+
+        zipfile.on('error', () => {
+          try { zipfile.close(); } catch (_) {}
+          resolve(null);
+        });
+      });
+    });
+  }
+
+  /**
+   * Dosya adından akıllı tarih ayıklama (Kamera, WhatsApp, Signal, Ekran görüntüsü formatları)
+   */
+  static extractDateFromFilename(name) {
+    if (!name || typeof name !== 'string') return null;
+
+    // 1. YYYYMMDD_HHMMSS or YYYYMMDD-HHMMSS (e.g. IMG_20220815_143022, PXL_20230412_123456, VID_20210520_192010)
+    let m = name.match(/(?:IMG_|VID_|PXL_|PHOTO_|DSC_|PIC_)?(20\d\d|19\d\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[_-]([01]\d|2[0-3])([0-5]\d)([0-5]\d)/i);
+    if (m) {
+      const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+      if (!isNaN(d.getTime())) return d;
+    }
+
+    // 2. YYYY-MM-DD[-_ ]HH.MM.SS (e.g. 2023-04-12 18.25.10, Screenshot_2022-03-15-10-20-30)
+    m = name.match(/(20\d\d|19\d\d)[-_.](0[1-9]|1[0-2])[-_.](0[1-9]|[12]\d|3[01])[-_ ]([01]\d|2[0-3])[-_.:]([0-5]\d)[-_.:]([0-5]\d)/);
+    if (m) {
+      const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+      if (!isNaN(d.getTime())) return d;
+    }
+
+    // 3. YYYY-MM-DD or YYYYMMDD without time (e.g. IMG-20230514-WA0002, WP_20190820, 2022-08-15)
+    m = name.match(/(?:WA|WP|IMG|VID|PHOTO)?[-_]?(20\d\d|19\d\d)[-_]?(0[1-9]|1[0-2])[-_]?(0[1-9]|[12]\d|3[01])/i);
+    if (m) {
+      const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12, 0, 0));
+      if (!isNaN(d.getTime())) return d;
+    }
+
+    // 4. 13 basamaklı Epoch milisaniye timestamp (e.g. 1622505600123.jpg)
+    m = name.match(/\b(1[4-7]\d{11})\b/);
+    if (m) {
+      const d = new Date(parseInt(m[1], 10));
+      if (!isNaN(d.getTime())) return d;
+    }
+
+    // 5. 10 basamaklı Epoch saniye timestamp (e.g. 1622505600.jpg)
+    m = name.match(/\b(1[4-7]\d{8})\b/);
+    if (m) {
+      const d = new Date(parseInt(m[1], 10) * 1000);
+      if (!isNaN(d.getTime())) return d;
+    }
+
+    return null;
+  }
+
+  /**
+   * Medya meta verisini (JSON yan dosyası, gömülü EXIF / QuickTime veya dosya adı tarihinden)
+   * akıllı ve çok aşamalı öncelik sırasıyla parse eder.
+   */
+  static async parseMetadata(item) {
+    let createdAt = null;
+    let description = '';
+    let isFavorite = false;
+    let dateFound = false;
 
     let jsonString = item.jsonContent || null;
 
@@ -394,22 +517,108 @@ class ArchiveScanner {
       }
     }
 
+    // --- 1. AŞAMA: Google Takeout JSON Yan Dosyası ---
     if (jsonString) {
       try {
         const data = JSON.parse(jsonString);
-        const timestamp = data?.photoTakenTime?.timestamp;
-        if (timestamp) {
-          const date = new Date(parseInt(timestamp, 10) * 1000);
-          if (!isNaN(date.getTime())) {
-            result.createdAt = date.toISOString();
+        let parsedDate = null;
+
+        // a) photoTakenTime.timestamp
+        const ptt = data?.photoTakenTime?.timestamp;
+        if (ptt && ptt !== '0' && ptt !== 0) {
+          const d = new Date(parseInt(ptt, 10) * 1000);
+          if (!isNaN(d.getTime()) && d.getFullYear() > 1970) parsedDate = d;
+        }
+
+        // b) photoTakenTime.formatted
+        if (!parsedDate && data?.photoTakenTime?.formatted) {
+          const d = new Date(data.photoTakenTime.formatted);
+          if (!isNaN(d.getTime()) && d.getFullYear() > 1970) parsedDate = d;
+        }
+
+        // c) creationTime.timestamp
+        if (!parsedDate) {
+          const ct = data?.creationTime?.timestamp;
+          if (ct && ct !== '0' && ct !== 0) {
+            const d = new Date(parseInt(ct, 10) * 1000);
+            if (!isNaN(d.getTime()) && d.getFullYear() > 1970) parsedDate = d;
           }
         }
-        if (data?.description) result.description = data.description;
-        if (data?.favorited === true) result.isFavorite = true;
+
+        // d) creationTime.formatted
+        if (!parsedDate && data?.creationTime?.formatted) {
+          const d = new Date(data.creationTime.formatted);
+          if (!isNaN(d.getTime()) && d.getFullYear() > 1970) parsedDate = d;
+        }
+
+        // e) modificationTime.timestamp
+        if (!parsedDate) {
+          const mt = data?.modificationTime?.timestamp;
+          if (mt && mt !== '0' && mt !== 0) {
+            const d = new Date(parseInt(mt, 10) * 1000);
+            if (!isNaN(d.getTime()) && d.getFullYear() > 1970) parsedDate = d;
+          }
+        }
+
+        if (parsedDate) {
+          createdAt = parsedDate.toISOString();
+          dateFound = true;
+        }
+
+        if (data?.description) description = data.description;
+        if (data?.favorited === true) isFavorite = true;
       } catch (_) {}
     }
 
-    return result;
+    // --- 2. AŞAMA: Gömülü EXIF / QuickTime Meta Verisi (exifr) ---
+    if (!dateFound) {
+      try {
+        let exifData = null;
+        if (!item.isZip && item.fullPath && fs.existsSync(item.fullPath)) {
+          exifData = await exifr.parse(item.fullPath, ['DateTimeOriginal', 'CreateDate', 'ModifyDate', 'creationDate']);
+        } else if (item.isZip && item.zipPath && item.entryName) {
+          const headerChunk = await ArchiveScanner._readZipEntryHeader(item.zipPath, item.entryName, 65536);
+          if (headerChunk && headerChunk.length > 0) {
+            exifData = await exifr.parse(headerChunk, ['DateTimeOriginal', 'CreateDate', 'ModifyDate', 'creationDate']);
+          }
+        }
+
+        if (exifData) {
+          const exifDate = exifData.DateTimeOriginal || exifData.CreateDate || exifData.creationDate || exifData.ModifyDate;
+          if (exifDate instanceof Date && !isNaN(exifDate.getTime()) && exifDate.getFullYear() > 1970) {
+            createdAt = exifDate.toISOString();
+            dateFound = true;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // --- 3. AŞAMA: Dosya Adından Akıllı Tarih Ayıklama (Regex) ---
+    // Örn: IMG_20220815_143022.jpg, PXL_20230412, IMG-20230514-WA0002, 2021-09-04
+    if (!dateFound && item.name) {
+      const filenameDate = ArchiveScanner.extractDateFromFilename(item.name);
+      if (filenameDate) {
+        createdAt = filenameDate.toISOString();
+        dateFound = true;
+      }
+    }
+
+    // --- 4. AŞAMA: Dosya Sistemi mtime (Yalnızca geçmiş bir tarihse) ---
+    if (!dateFound && item.mtime) {
+      const mDate = new Date(item.mtime);
+      if (!isNaN(mDate.getTime()) && mDate.getFullYear() > 1970) {
+        createdAt = mDate.toISOString();
+      }
+    }
+
+    // Nihai güvence
+    const finalIso = createdAt || new Date().toISOString();
+    return {
+      createdAt: finalIso,
+      modifiedAt: finalIso,
+      isFavorite,
+      description
+    };
   }
 
   static _findDiskJsonPath(mediaPath) {
@@ -418,31 +627,61 @@ class ArchiveScanner {
     const ext = path.extname(filename);
     const stem = path.basename(filename, ext);
 
-    const c1 = path.join(dir, `${filename}.json`);
-    if (fs.existsSync(c1)) return c1;
-
-    const c2 = path.join(dir, `${stem}.json`);
-    if (fs.existsSync(c2)) return c2;
+    const candidates = [
+      `${filename}.json`,
+      `${stem}.json`,
+      `${filename}.supplemental-metadata.json`,
+      `${stem}.supplemental-metadata.json`
+    ];
 
     if (stem.includes('(') && stem.endsWith(')')) {
       const idx = stem.lastIndexOf('(');
       const base = stem.substring(0, idx);
       const numPart = stem.substring(idx);
-      const c3 = path.join(dir, `${base}${ext}${numPart}.json`);
-      if (fs.existsSync(c3)) return c3;
+      candidates.push(`${base}${ext}${numPart}.json`);
+      candidates.push(`${base}${numPart}.json`);
+      candidates.push(`${base}${numPart}${ext}.json`);
+      candidates.push(`${base}${ext}.json${numPart}`);
     }
 
-    if (filename.length > 45) {
-      const prefix = filename.substring(0, 46);
-      try {
-        const files = fs.readdirSync(dir);
-        for (const file of files) {
-          if (file.startsWith(prefix) && file.endsWith('.json')) {
-            return path.join(dir, file);
+    if (stem.toLowerCase().endsWith('-edited') || stem.toLowerCase().endsWith('-düzenlendi')) {
+      const originalStem = stem.replace(/-(?:edited|d[uü]zenlendi)$/i, '');
+      candidates.push(`${originalStem}${ext}.json`);
+      candidates.push(`${originalStem}.json`);
+      candidates.push(`${originalStem}.supplemental-metadata.json`);
+    }
+
+    // 1. Doğrudan dosya varlığı kontrolü
+    for (const c of candidates) {
+      const full = path.join(dir, c);
+      if (fs.existsSync(full)) return full;
+    }
+
+    // 2. Büyük/küçük harf duyarsız ve kırpılmış isim arama
+    try {
+      const files = fs.readdirSync(dir);
+      const filesLower = new Map();
+      for (const f of files) {
+        filesLower.set(f.toLowerCase(), f);
+      }
+
+      for (const c of candidates) {
+        const lower = c.toLowerCase();
+        if (filesLower.has(lower)) {
+          return path.join(dir, filesLower.get(lower));
+        }
+      }
+
+      // Google Takeout 46-51 karakter uzun dosya adı kırpması
+      if (stem.length > 35) {
+        const prefix = stem.substring(0, 36).toLowerCase();
+        for (const [fLower, fOriginal] of filesLower.entries()) {
+          if (fLower.startsWith(prefix) && fLower.endsWith('.json')) {
+            return path.join(dir, fOriginal);
           }
         }
-      } catch (_) {}
-    }
+      }
+    } catch (_) {}
 
     return null;
   }

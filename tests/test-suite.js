@@ -156,7 +156,7 @@ describe('Immich Transfer Test Suite (ZIP & Live Photo Edition)', () => {
     // standard.jpg, no_ext.png, copy(1).jpg, longName.jpg, apple_live.heic (apple_live.mov Live Photo olarak bağlandı!)
     const standardFile = files.find(f => f.name === 'standard.jpg');
     assert.ok(standardFile, 'standard.jpg bulunmalı');
-    const stdMeta = TakeoutScanner.parseMetadata(standardFile);
+    const stdMeta = await TakeoutScanner.parseMetadata(standardFile);
     assert.equal(stdMeta.createdAt, '2022-12-31T23:59:59.000Z', 'Yılbaşı timestampi doğru parse edilmeli');
     assert.equal(stdMeta.isFavorite, true, 'Favori true olmalı');
     assert.equal(stdMeta.description, 'Yılbaşı Tatili 2023', 'Açıklama okunmalı');
@@ -164,19 +164,19 @@ describe('Immich Transfer Test Suite (ZIP & Live Photo Edition)', () => {
     // Uzantısız JSON kontrolü (no_ext.png -> no_ext.json)
     const noExtFile = files.find(f => f.name === 'no_ext.png');
     assert.ok(noExtFile, 'no_ext.png bulunmalı');
-    const noExtMeta = TakeoutScanner.parseMetadata(noExtFile);
+    const noExtMeta = await TakeoutScanner.parseMetadata(noExtFile);
     assert.equal(noExtMeta.createdAt, '2021-01-01T00:00:00.000Z');
 
     // Parantezli kopya eşleme kontrolü (copy(1).jpg -> copy.jpg(1).json)
     const copyFile = files.find(f => f.name === 'copy(1).jpg');
     assert.ok(copyFile, 'copy(1).jpg bulunmalı');
-    const copyMeta = TakeoutScanner.parseMetadata(copyFile);
+    const copyMeta = await TakeoutScanner.parseMetadata(copyFile);
     assert.equal(copyMeta.createdAt, '2021-06-01T00:00:00.000Z');
 
     // Truncated (kırpılmış) isim eşleme kontrolü
     const longFile = files.find(f => f.name.startsWith('this_is_a_very_long'));
     assert.ok(longFile, 'Uzun isimli dosya bulunmalı');
-    const longMeta = TakeoutScanner.parseMetadata(longFile);
+    const longMeta = await TakeoutScanner.parseMetadata(longFile);
     assert.equal(longMeta.description, 'Uzun dosya açıklaması');
   });
 
@@ -215,7 +215,7 @@ describe('Immich Transfer Test Suite (ZIP & Live Photo Edition)', () => {
     );
 
     const testFile = path.join(TEST_TAKEOUT_DIR, 'standard.jpg');
-    const meta = TakeoutScanner.parseMetadata({ fullPath: testFile });
+    const meta = await TakeoutScanner.parseMetadata({ fullPath: testFile });
     let chunkCount = 0;
     const res = await validClient.uploadAsset(testFile, meta, (len) => {
       chunkCount += len;
@@ -329,7 +329,7 @@ describe('Immich Transfer Test Suite (ZIP & Live Photo Edition)', () => {
     // Immich'e livePhotoData ile upload testi
     const client = new ImmichClient(`http://localhost:${mockServerPort}`, 'test-valid-key');
     const initialLivePhotoCount = livePhotoUploadedCount;
-    const meta = TakeoutScanner.parseMetadata(livePhotoItem);
+    const meta = await TakeoutScanner.parseMetadata(livePhotoItem);
     const res = await client.uploadAsset(livePhotoItem, meta);
 
     assert.equal(res.success, true);
@@ -348,7 +348,7 @@ describe('Immich Transfer Test Suite (ZIP & Live Photo Edition)', () => {
     const zippedImage = zipFiles.find(f => f.name === 'photo_inside_zip.jpg');
     assert.ok(zippedImage, 'ZIP içindeki photo_inside_zip.jpg bulunmalı');
     assert.equal(zippedImage.isZip, true);
-    const zipMeta = TakeoutScanner.parseMetadata(zippedImage);
+    const zipMeta = await TakeoutScanner.parseMetadata(zippedImage);
     assert.equal(zipMeta.description, 'ZIP içinden okunan fotoğraf', 'ZIP içindeki JSON bellekte okunmalı');
 
     // ZIP içi Live Photo çifti (zip_live.jpg + zip_live.mp4)
@@ -426,5 +426,54 @@ describe('Immich Transfer Test Suite (ZIP & Live Photo Edition)', () => {
     assert.ok(stats.zipCount > 0, 'zipCount > 0 olmalı');
     assert.ok(stats.livePhotoCount > 0, 'livePhotoCount > 0 olmalı');
     assert.equal(stats.totalFiles, stats.extractedCount + stats.zipCount);
+  });
+
+  // TEST 10: Akıllı Tarih Kurtarma (Filename Regex & creationTime fallback)
+  test('10. Metadata Recovery: Dosya adı regex ve alternatif creationTime fallbackleri', async () => {
+    // 1. Kamera standart formatı (IMG_20220815_143022)
+    const d1 = TakeoutScanner.extractDateFromFilename('IMG_20220815_143022.jpg');
+    assert.ok(d1, 'IMG formatından tarih okunmalı');
+    assert.equal(d1.toISOString(), '2022-08-15T14:30:22.000Z');
+
+    // 2. WhatsApp formatı (IMG-20230514-WA0002)
+    const d2 = TakeoutScanner.extractDateFromFilename('IMG-20230514-WA0002.jpeg');
+    assert.ok(d2, 'WhatsApp formatından tarih okunmalı');
+    assert.equal(d2.toISOString().slice(0, 10), '2023-05-14');
+
+    // 3. Ekran Görüntüsü formatı (Screenshot_2021-09-10-18-30-00)
+    const d3 = TakeoutScanner.extractDateFromFilename('Screenshot_2021-09-10-18-30-00.png');
+    assert.ok(d3, 'Screenshot formatından tarih okunmalı');
+    assert.equal(d3.toISOString(), '2021-09-10T18:30:00.000Z');
+
+    // 4. Epoch milisaniye formatı (1622505600000.jpg -> 2021-06-01)
+    const d4 = TakeoutScanner.extractDateFromFilename('1622505600000.jpg');
+    assert.ok(d4, 'Epoch timestamp formatından tarih okunmalı');
+    assert.equal(d4.toISOString(), '2021-06-01T00:00:00.000Z');
+
+    // 5. JSON yan dosyası olmayan ama dosya adında tarihi olan bir dosya:
+    // mtime bugün olsa bile dosya adındaki gerçek tarih atanmalı!
+    const todayMtime = new Date();
+    const fallbackItem = {
+      name: 'IMG_20200315_091530.jpg',
+      fullPath: '/non/existent/path/IMG_20200315_091530.jpg',
+      mtime: todayMtime,
+      isZip: false
+    };
+    const metaFallback = await TakeoutScanner.parseMetadata(fallbackItem);
+    assert.equal(metaFallback.createdAt, '2020-03-15T09:15:30.000Z', 'JSON bulunamadığında dosya adındaki gerçek tarih atanmalı');
+
+    // 6. JSON'da photoTakenTime yoksa creationTime.timestamp okunmalı
+    const jsonWithoutPhotoTakenTime = JSON.stringify({
+      title: 'no_photo_taken.jpg',
+      creationTime: {
+        timestamp: '1577836800' // 2020-01-01T00:00:00Z
+      }
+    });
+    const metaCreation = await TakeoutScanner.parseMetadata({
+      name: 'no_photo_taken.jpg',
+      jsonContent: jsonWithoutPhotoTakenTime,
+      mtime: todayMtime
+    });
+    assert.equal(metaCreation.createdAt, '2020-01-01T00:00:00.000Z', 'creationTime fallback doğru çalışmalı');
   });
 });

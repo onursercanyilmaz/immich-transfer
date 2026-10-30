@@ -248,7 +248,7 @@ class Migrator extends EventEmitter {
         this.activeWorkers.set(workerId, item.name);
         this.emit('workers', Array.from(this.activeWorkers.values()));
 
-        const meta = TakeoutScanner.parseMetadata(item);
+        const meta = await TakeoutScanner.parseMetadata(item);
 
         // --- PARALEL MÜKERRER (DUPLICATE) ENGELLEME KORUMASI ---
         const assetFingerprint = `${item.name}_${item.size}_${meta.createdAt}`;
