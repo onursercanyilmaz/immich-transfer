@@ -65,15 +65,60 @@ class CloudTakeoutStreamer {
       console.log('[CloudTakeoutStreamer] Yanıt Content-Length:', res.headers['content-length']);
       console.log('[CloudTakeoutStreamer] Yanıt Final URL:', res.request?.res?.responseUrl || config.url);
 
-      const contentType = (res.headers['content-type'] || '').toLowerCase();
+      let contentType = (res.headers['content-type'] || '').toLowerCase();
 
       // Eğer sunucu bir HTML sayfası döndürdüyse (Google Login veya Takeout Web sayfası)
+      // Sayfa içindeki gizli gerçek indirme linkini (takeout-download veya .zip) otomatik tara
       if (contentType.includes('text/html')) {
-        throw new Error(
-          'Girilen bağlantı doğrudan bir ZIP indirmesi değil, Google web giriş sayfası döndürdü. ' +
-          'Lütfen tarayıcınızda (Chrome/Edge/Safari) indirmeyi bir kez başlatıp İndirilenler sayfasından (Ctrl+J veya Cmd+Option+L) ' +
-          '"cURL Olarak Kopyala" (Copy as cURL) yapıp yapıştırın.'
-        );
+        let htmlBody = '';
+        if (typeof res.data === 'string') {
+          htmlBody = res.data;
+        } else if (Buffer.isBuffer(res.data)) {
+          htmlBody = res.data.toString('utf8');
+        }
+
+        console.log('[CloudTakeoutStreamer] HTML sayfası alındı, içindeki indirme bağlantısı taranıyor...');
+
+        // HTML içindeki gerçek CDN indirme linkini yakala
+        const urlPatterns = [
+          /https?:\/\/[^\s"'<>]*(?:takeout-download|usercontent\.google\.com)[^\s"'<>]+/i,
+          /<a\s+(?:[^>]*?\s+)?href=["'](https?:\/\/[^"'>]+)["']/i,
+          /window\.location(?:\.href)?\s*=\s*['"](https?:\/\/[^'"]+)['"]/i,
+          /<meta\s+http-equiv=["']refresh["']\s+content=["'][^"']*url=([^"'>]+)["']/i
+        ];
+
+        let extractedDownloadUrl = null;
+        for (const pattern of urlPatterns) {
+          const match = htmlBody.match(pattern);
+          if (match) {
+            extractedDownloadUrl = match[1] || match[0];
+            break;
+          }
+        }
+
+        if (extractedDownloadUrl) {
+          console.log('[CloudTakeoutStreamer] HTML içerisinden gerçek CDN linki çıkarıldı:', extractedDownloadUrl);
+          // Çıkarılan bu gerçek indirme adresine doğrudan Range isteği at
+          res = await axios.get(extractedDownloadUrl, {
+            headers: {
+              ...config.headers,
+              'Range': 'bytes=0-0'
+            },
+            maxRedirects: 10,
+            validateStatus: s => (s >= 200 && s < 400)
+          });
+
+          finalUrl = res.request?.res?.responseUrl || extractedDownloadUrl;
+          contentType = (res.headers['content-type'] || '').toLowerCase();
+        }
+
+        if (contentType.includes('text/html')) {
+          throw new Error(
+            'Girilen bağlantı doğrudan bir ZIP indirmesi değil, Google web giriş sayfası döndürdü. ' +
+            'Lütfen tarayıcınızda (Chrome/Edge/Safari) indirmeyi bir kez başlatıp İndirilenler sayfasından (Ctrl+J veya Cmd+Option+L) ' +
+            '"cURL Olarak Kopyala" (Copy as cURL) yapıp yapıştırın.'
+          );
+        }
       }
 
       // Content-Range: bytes 0-0/52428800000 -> Toplam boyutu yakala
