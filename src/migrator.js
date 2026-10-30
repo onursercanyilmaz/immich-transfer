@@ -289,7 +289,10 @@ class Migrator extends EventEmitter {
           this.checkpoint.record(item.fullPath, item.size, 'DUPLICATE', '', 'Paralel kopya atlandı');
           this.log('SKIP', `Paralel kopya tespit edildi, ağ harcanmadan atlandı: ${item.name}`);
           if (this.organizer && this.organizer.enabled) {
-            await this.organizer.organize(item, 'duplicates');
+            const orgRes = await this.organizer.organize(item, 'duplicates');
+            if (orgRes?.primaryFile) {
+              this.checkpoint.record(orgRes.primaryFile, item.size, 'DUPLICATE', '', 'Paralel kopya konumu');
+            }
           }
           this.emit('progress', this.stats);
           continue;
@@ -342,7 +345,10 @@ class Migrator extends EventEmitter {
             this.checkpoint.record(item.fullPath, item.size, 'DUPLICATE', result.id);
             this.log('SKIP', `Zaten mevcut: ${item.name}`);
             if (this.organizer && this.organizer.enabled) {
-              await this.organizer.organize(item, 'duplicates');
+              const orgRes = await this.organizer.organize(item, 'duplicates');
+              if (orgRes?.primaryFile) {
+                this.checkpoint.record(orgRes.primaryFile, item.size, 'DUPLICATE', result.id, 'Ayrıştırılmış duplicate konumu');
+              }
             }
           } else {
             this.stats.successCount++;
@@ -350,7 +356,10 @@ class Migrator extends EventEmitter {
             const liveTag = item.isLivePhoto ? ` (Live Photo 📸+🎥)` : '';
             this.log('SUCCESS', `Yüklendi${liveTag}: ${item.name} (${(item.size / (1024 * 1024)).toFixed(2)} MB)`);
             if (this.organizer && this.organizer.enabled) {
-              await this.organizer.organize(item, 'uploaded');
+              const orgRes = await this.organizer.organize(item, 'uploaded');
+              if (orgRes?.primaryFile) {
+                this.checkpoint.record(orgRes.primaryFile, item.size, 'SUCCESS', result.id, 'Ayrıştırılmış uploaded konumu');
+              }
             }
           }
         } else {

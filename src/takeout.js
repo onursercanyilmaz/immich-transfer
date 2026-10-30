@@ -40,6 +40,13 @@ class ArchiveScanner {
       return await this._scanZipFile(targetPath, { pairLivePhotos });
     }
 
+    // Kullanıcı doğrudan 'uploaded' veya 'duplicates' klasörünü seçtiyse mükerrerliği önlemek için engelle
+    const targetBaseName = path.basename(targetPath).toLowerCase();
+    if (targetBaseName === 'uploaded' || targetBaseName === 'duplicates') {
+      console.warn(`[ArchiveScanner] '${targetBaseName}' klasörü önceden aktarılmış medyaları içerdiği için tarama atlandı.`);
+      return [];
+    }
+
     // Normal klasör (içinde loose dosyalar veya alt .zip dosyaları olabilir)
     return await this._scanFolder(targetPath, { scanExtracted, scanZips, pairLivePhotos });
   }
@@ -69,11 +76,12 @@ class ArchiveScanner {
         if (
           entry.name.startsWith('.') ||
           entry.name === '__MACOSX' ||
-          nameLower === 'immich_organized' ||
-          nameLower === 'immich_sorted' ||
           nameLower === 'uploaded' ||
           nameLower === 'duplicates' ||
-          nameLower === 'errors'
+          nameLower.includes('_organized') ||
+          nameLower.includes('_sorted') ||
+          nameLower === 'immich_organized' ||
+          nameLower === 'immich_sorted'
         ) continue;
 
         const fullPath = path.join(currentDir, entry.name);

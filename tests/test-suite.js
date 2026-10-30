@@ -533,4 +533,32 @@ describe('Immich Transfer Test Suite (ZIP & Live Photo Edition)', () => {
     assert.ok(resZipOrg, 'ZIP içi dosya başarıyla çıkarılmalı');
     assert.ok(fs.existsSync(path.join(orgOutDir, 'uploaded', 'photo_inside_zip.jpg')), 'ZIP içindeki dosya uploaded klasörüne çıkarılmalı');
   });
+
+  // TEST 12: Rescan Protection (uploaded, duplicates ve _organized dizinlerinin taranmaması)
+  test('12. Rescan Protection: uploaded/ klasörünün ve ayrıştırılmış dizinlerin yeniden taranmasını engelleme', async () => {
+    const parentFolder = path.join(TEST_DIR, 'protection_test');
+    const normalSub = path.join(parentFolder, 'normal_photos');
+    const uploadedSub = path.join(parentFolder, 'uploaded');
+    const duplicatesSub = path.join(parentFolder, 'duplicates');
+    const organizedFolder = path.join(parentFolder, 'archive_organized');
+
+    fs.mkdirSync(normalSub, { recursive: true });
+    fs.mkdirSync(uploadedSub, { recursive: true });
+    fs.mkdirSync(duplicatesSub, { recursive: true });
+    fs.mkdirSync(organizedFolder, { recursive: true });
+
+    fs.writeFileSync(path.join(normalSub, 'valid_to_scan.jpg'), '123');
+    fs.writeFileSync(path.join(uploadedSub, 'should_never_scan_this.jpg'), '456');
+    fs.writeFileSync(path.join(duplicatesSub, 'also_never_scan.jpg'), '789');
+    fs.writeFileSync(path.join(organizedFolder, 'ignored_organized.jpg'), 'abc');
+
+    // 1. Üst dizin tarandığında sadece normal_photos içindeki bulunmalı
+    const scanned = await TakeoutScanner.scan(parentFolder);
+    assert.equal(scanned.length, 1, 'Yalnızca normal_photos taranmalı, uploaded ve _organized atlanmalı');
+    assert.equal(scanned[0].name, 'valid_to_scan.jpg');
+
+    // 2. Doğrudan 'uploaded' klasörü hedeflenirse tarama engellenmeli
+    const directlyScannedUploaded = await TakeoutScanner.scan(uploadedSub);
+    assert.equal(directlyScannedUploaded.length, 0, 'uploaded klasörü doğrudan seçildiğinde taranmamalı');
+  });
 });
