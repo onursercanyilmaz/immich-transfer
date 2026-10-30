@@ -34,6 +34,10 @@ class Migrator extends EventEmitter {
     this.isStopped = false;
     this.speedSampleTimer = null;
     this.lastUploadedBytes = 0;
+
+    // Paralel yükleme sırasında aynı dosyanın mükerrer yüklenmesini önleyen in-flight mutex & parmak izi seti
+    this.inFlightAssets = new Set();
+    this.completedFingerprints = new Set();
   }
 
   log(level, message) {
@@ -166,8 +170,31 @@ class Migrator extends EventEmitter {
         this.emit('workers', Array.from(this.activeWorkers.values()));
 
         const meta = TakeoutScanner.parseMetadata(item.fullPath, item.mtime);
-        let fileUploadedBytes = 0;
 
+        // --- PARALEL MÜKERRER (DUPLICATE) ENGELLEME KORUMASI ---
+        // Takeout arşivinde aynı fotoğraf hem 'Photos from 2023' hem de bir 'Albüm' içinde yer alabilir.
+        // Dosya adı, boyutu ve çekim tarihi parmak izi oluşturur.
+        const assetFingerprint = `${item.name}_${item.size}_${meta.createdAt}`;
+
+        if (this.completedFingerprints.has(assetFingerprint) || this.inFlightAssets.has(assetFingerprint)) {
+          // Bu dosya ya başka bir worker tarafından o anda yükleniyor ya da az önce tamamlandı!
+          // 0 KB ağ harcayarak doğrudan atla
+          this.stats.duplicateCount++;
+          this.stats.processedFiles++;
+          this.stats.uploadedBytes += item.size;
+          if (this.stats.totalBytes > 0) {
+            this.stats.percentage = Math.min(100, Math.round((this.stats.uploadedBytes / this.stats.totalBytes) * 100));
+          }
+          this.checkpoint.record(item.fullPath, item.size, 'DUPLICATE', '', 'Paralel kopya atlandı');
+          this.log('SKIP', `Paralel kopya tespit edildi, ağ harcanmadan atlandı: ${item.name}`);
+          this.emit('progress', this.stats);
+          continue;
+        }
+
+        // Dosyayı aktif yükleme havuzuna (in-flight) kilitle
+        this.inFlightAssets.add(assetFingerprint);
+
+        let fileUploadedBytes = 0;
         const onProgress = (chunkLen) => {
           fileUploadedBytes += chunkLen;
           this.stats.uploadedBytes += chunkLen;
@@ -177,7 +204,17 @@ class Migrator extends EventEmitter {
           this.emit('progress', this.stats);
         };
 
-        const result = await this.client.uploadAsset(item.fullPath, meta, onProgress);
+        let result;
+        try {
+          result = await this.client.uploadAsset(item.fullPath, meta, onProgress);
+        } finally {
+          // Yükleme bitince in-flight kilidini kaldır
+          this.inFlightAssets.delete(assetFingerprint);
+        }
+
+        if (result.success) {
+          this.completedFingerprints.add(assetFingerprint);
+        }
 
         // Kalan byte eşitleme
         const unread = item.size - fileUploadedBytes;

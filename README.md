@@ -9,7 +9,7 @@
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
   [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?style=flat-square&logo=docker&logoColor=white)](docker-compose.yml)
   [![Node.js](https://img.shields.io/badge/Node.js-20+-339933.svg?style=flat-square&logo=node.js&logoColor=white)](package.json)
-  [![Tests](https://img.shields.io/badge/Tests-5%2F5%20Passing-success.svg?style=flat-square)](tests/)
+  [![Tests](https://img.shields.io/badge/Tests-6%2F6%20Passing-success.svg?style=flat-square)](tests/)
   [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg?style=flat-square)](https://github.com)
   [![i18n](https://img.shields.io/badge/Language-English%20%7C%20T%C3%BCrk%C3%A7e-indigo.svg?style=flat-square)](public/index.html)
 

@@ -262,4 +262,52 @@ describe('Immich Google Takeout Migrator Test Suite', () => {
 
     assert.ok(directories.includes('SubAlbum2023'), 'Alt albüm klasörü listede bulunmalı');
   });
+
+  // TEST 6: Paralel Aynı Dosya Yüklenmesini Engelleme (In-Flight Mutex)
+  test('6. In-Flight Deduplication: Farklı klasörlerdeki aynı dosyanın tespiti ve ağ harcamadan atlanması', async () => {
+    // Takeout klasöründe iki farklı yere birebir aynı dosyayı koyalım
+    const folderA = path.join(TEST_TAKEOUT_DIR, 'Photos_2023');
+    const folderB = path.join(TEST_TAKEOUT_DIR, 'Album_Holiday');
+    fs.mkdirSync(folderA, { recursive: true });
+    fs.mkdirSync(folderB, { recursive: true });
+
+    const fileA = path.join(folderA, 'duplicate_test.jpg');
+    const fileB = path.join(folderB, 'duplicate_test.jpg');
+    const sameContent = 'identical-photo-binary-content-12345';
+    fs.writeFileSync(fileA, sameContent);
+    fs.writeFileSync(fileB, sameContent);
+
+    // Aynı JSON meta verisini koyalım
+    const jsonContent = JSON.stringify({ photoTakenTime: { timestamp: '1672531199' } });
+    fs.writeFileSync(fileA + '.json', jsonContent);
+    fs.writeFileSync(fileB + '.json', jsonContent);
+
+    const cp = new CheckpointManager(path.join(TEST_DIR, 'dedup_checkpoint'));
+    const migrator = new Migrator(cp);
+
+    // Sadece bu iki dosyayı aktaralım
+    migrator.filesToProcess = [
+      { fullPath: fileA, name: 'duplicate_test.jpg', size: sameContent.length, mtime: new Date() },
+      { fullPath: fileB, name: 'duplicate_test.jpg', size: sameContent.length, mtime: new Date() }
+    ];
+    migrator.stats.totalBytes = sameContent.length * 2;
+    migrator.stats.pendingFiles = 2;
+
+    const completedPromise = new Promise((resolve) => {
+      migrator.on('status', (evt) => {
+        if (evt.state === 'COMPLETED') resolve(evt.stats);
+      });
+    });
+
+    migrator.start({
+      immichUrl: `http://localhost:${mockServerPort}`,
+      apiKey: 'test-valid-key',
+      concurrency: 2 // Paralel olarak ikisi birden havuza girer
+    });
+
+    const stats = await completedPromise;
+    assert.equal(stats.successCount, 1, 'Dosyalardan sadece biri sunucuya yüklenmeli');
+    assert.equal(stats.duplicateCount, 1, 'Diğer kopya duplicate olarak yerelde yakalanmalı');
+    assert.equal(stats.errorCount, 0, 'Hata oluşmamalı');
+  });
 });
