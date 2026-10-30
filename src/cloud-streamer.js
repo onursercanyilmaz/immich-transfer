@@ -29,8 +29,24 @@ class CloudTakeoutStreamer {
           'Range': 'bytes=0-0'
         },
         maxRedirects: 10,
+        beforeRedirect: (options) => {
+          // Cross-domain yönlendirmede Google oturum çerezlerini koru
+          if (config.headers['Cookie']) options.headers['Cookie'] = config.headers['Cookie'];
+          if (config.headers['cookie']) options.headers['cookie'] = config.headers['cookie'];
+        },
         validateStatus: status => (status >= 200 && status < 400)
       });
+
+      const contentType = (res.headers['content-type'] || '').toLowerCase();
+
+      // Eğer sunucu bir HTML sayfası döndürdüyse (Google Login veya Takeout Web sayfası)
+      if (contentType.includes('text/html')) {
+        throw new Error(
+          'Girilen bağlantı doğrudan bir ZIP indirmesi değil, Google web giriş sayfası döndürdü. ' +
+          'Lütfen tarayıcınızda (Chrome/Edge/Safari) indirmeyi bir kez başlatıp İndirilenler sayfasından (Ctrl+J veya Cmd+Option+L) ' +
+          '"cURL Olarak Kopyala" (Copy as cURL) yapıp yapıştırın.'
+        );
+      }
 
       // Content-Range: bytes 0-0/52428800000 -> Toplam boyutu yakala
       let totalSize = 0;
@@ -42,6 +58,24 @@ class CloudTakeoutStreamer {
 
       if (!totalSize && res.headers['content-length']) {
         totalSize = parseInt(res.headers['content-length'], 10);
+      }
+
+      const supportsRange = res.status === 206 || res.headers['accept-ranges'] === 'bytes' || !!contentRange;
+
+      if (!totalSize || totalSize <= 0) {
+        throw new Error(
+          'Arşiv dosya boyutu belirlenemedi (0 Bayt döndü). ' +
+          'Bağlantının geçerli ve süresinin dolmamış olduğundan emin olun. ' +
+          'Tarayıcınızın İndirilenler sayfasından güncel "Copy as cURL" komutunu yapıştırın.'
+        );
+      }
+
+      if (!supportsRange) {
+        throw new Error(
+          'Hedef sunucu HTTP Range (kısmi içerik akışı) desteklemiyor. ' +
+          'Google Takeout CDN canlı akış için Range desteği zorunludur. ' +
+          'Lütfen doğrudan indirme CDN bağlantısını (takeout-download.usercontent.google.com) kullanın.'
+        );
       }
 
       // Dosya adını belirle
@@ -65,13 +99,13 @@ class CloudTakeoutStreamer {
         filename,
         totalBytes: totalSize,
         totalSizeGb: (totalSize / (1024 * 1024 * 1024)).toFixed(2),
-        supportsRange: res.status === 206 || res.headers['accept-ranges'] === 'bytes'
+        supportsRange: true
       };
     } catch (err) {
       if (err.response && (err.response.status === 401 || err.response.status === 403)) {
         throw new Error('Google oturum çerezi geçersiz veya süresi dolmuş. Lütfen Takeout sayfasından güncel cURL komutunu kopyalayın.');
       }
-      throw new Error(`Google Takeout bağlantı hatası: ${err.message}`);
+      throw new Error(`Google Takeout doğrulama hatası: ${err.message}`);
     }
   }
 
