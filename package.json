@@ -4,7 +4,8 @@
   "description": "Dockerized Google Takeout to Immich Migrator with Web UI",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "node --test tests/test-suite.js"
   },
   "dependencies": {
     "axios": "^1.7.2",
