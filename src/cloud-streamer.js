@@ -193,20 +193,44 @@ class CloudTakeoutStreamer {
 
     return new Promise((resolve, reject) => {
       class HttpRangeRandomAccessReader extends yauzl.RandomAccessReader {
+        constructor() {
+          super();
+          this.cache = null; // { start, end, data: Buffer }
+        }
+
         _readStreamForRange(start, end) {
           const passThrough = new PassThrough();
-          const rangeHeader = `bytes=${start}-${end - 1}`;
+
+          // 1. Önbellek Kontrolü: İstenen bayt aralığı zaten RAM'deyse Google'a hiç gitme!
+          if (this.cache && start >= this.cache.start && end <= this.cache.end) {
+            const offsetStart = start - this.cache.start;
+            const offsetEnd = end - this.cache.start;
+            passThrough.end(this.cache.data.subarray(offsetStart, offsetEnd));
+            return passThrough;
+          }
+
+          // 2. Read-Ahead (Önden 2 MB Blok Okuma): Central Directory okurken binlerce tekil HTTP isteğini önler
+          const fetchSize = Math.max(end - start, 2 * 1024 * 1024);
+          const fetchEnd = Math.min(start + fetchSize, totalBytes);
+          const rangeHeader = `bytes=${start}-${fetchEnd - 1}`;
 
           axios.get(finalUrl, {
             headers: {
               ...headers,
               'Range': rangeHeader
             },
-            responseType: 'stream',
+            responseType: 'arraybuffer',
             timeout: 60000
           }).then(response => {
-            response.data.pipe(passThrough);
-            response.data.on('error', err => passThrough.emit('error', err));
+            const buf = Buffer.from(response.data);
+            this.cache = {
+              start: start,
+              end: start + buf.length,
+              data: buf
+            };
+
+            const sliceEnd = Math.min(end - start, buf.length);
+            passThrough.end(buf.subarray(0, sliceEnd));
           }).catch(err => {
             passThrough.emit('error', err);
           });
