@@ -4,23 +4,26 @@ Google Takeout ile indirilen devasa fotoğraf ve video arşivlerini (120 GB+) se
 
 ## Öne Çıkan Özellikler
 
-1. **Paralel & Eşzamanlı Yükleme (Multi-threading):** `CONCURRENCY` ayarı ile birden fazla dosyayı aynı anda yükleyerek bant genişliğini ve ev ağını maksimum verimle kullanır (Örn: 4-8 thread).
-2. **Hesap Doğrulama:** Başlangıçta Immich `/api/users/me` endpoint'ine bağlanarak ad, e-posta ve sunucu bilgilerini listeler, aktarım için kullanıcı onayı ister.
-3. **Akıllı Google Takeout JSON Eşleştirme:**
+1. **Asla Otomatik Kapanmayan Terminal:** İster aktarım tamamlansın, ister elektrik/bağlantı kopsun, terminal ekranı asla kendiliğinden kapanmaz. Sonuçları görebilmeniz için sizden `ENTER` tuşuna basmanızı bekler.
+2. **Kalıcı `fsync` Loglama (`transfer.log`):** İşletim sisteminin önbelleklemesi atlatılarak `os.fsync()` ile diske anında fiziksel yazım yapılır. Bilgisayar aniden kapansa dahi en son hangi dosyada kalındığı saniyesi saniyesine kayıt altındadır (`tail -f transfer.log` ile izlenebilir).
+3. **Otomatik Ağ Yeniden Deneme (Exponential Backoff):** Wi-Fi veya sunucu anlık kesilirse betik çökmez; kademeli sürelerle tekrar deneyerek devam eder.
+4. **Paralel & Eşzamanlı Yükleme (Multi-threading):** `CONCURRENCY` ayarı ile birden fazla dosyayı aynı anda yükleyerek bant genişliğini ve ev ağını maksimum verimle kullanır (Örn: 4-8 thread).
+5. **Hesap Doğrulama:** Başlangıçta Immich `/api/users/me` endpoint'ine bağlanarak ad, e-posta ve sunucu bilgilerini listeler, aktarım için kullanıcı onayı ister.
+6. **Akıllı Google Takeout JSON Eşleştirme:**
    - Standart `foto.jpg.json` ve `foto.json` biçimlerini tanır.
    - Google Takeout'un kopya dosyalarındaki `foto(1).jpg` $\rightarrow$ `foto.jpg(1).json` eşleştirmelerini çözer.
    - 46-51 karakterden sonra kırpılan uzun dosya adı JSON'larını otomatik yakalar.
    - `photoTakenTime.timestamp` değerini milisaniyelik UTC ISO-8601 tarihine dönüştürür.
-4. **Gerçek Zamanlı Terminal Paneli (Rich):**
+7. **Gerçek Zamanlı Terminal Paneli (Rich):**
    - **% İlerleme Çubuğu**
    - **Birleşik Anlık Transfer Hızı (MB/s)** (Tüm paralel iş parçacıklarının toplam bant genişliğini canlı hesaplar)
    - **Kalan Tahmini Süre (ETA)**
    - **GB ve Dosya Sayaçları** (`12.450 / 35.000` dosya, `51.2 / 120.5 GB`)
-5. **Thread-Safe Kesinti Koruması (Resume / Checkpoint):**
-   - Yerel `checkpoint.db` (SQLite) sayesinde internet kopsa, elektrik gitse veya terminal kapansa bile tekrar çalıştırıldığında yüklenmiş dosyaları anında atlar ve kaldığı yerden devam eder.
-6. **Duplicate Yönetimi:**
+8. **Thread-Safe Kesinti Koruması (Resume / Checkpoint):**
+   - Yerel `checkpoint.db` (SQLite) sayesinde tekrar çalıştırıldığında yüklenmiş dosyaları anında atlar ve kaldığı yerden devam eder.
+9. **Duplicate Yönetimi:**
    - Immich sunucusunda zaten var olan dosyalar çökme yaratmaz; `SKIPPED_DUPLICATE` olarak işaretlenir.
-7. **Güvenlik:**
+10. **Güvenlik:**
    - API anahtarları ve özel adresler `.env` dosyasında tutulur, git deposuna asla commit edilmez.
 
 ---
